@@ -16,11 +16,13 @@ import glob
 import json
 import math
 import os
+import re
 import time
 from dataclasses import dataclass, field
 
 RUNTIME_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "agentscope")
 SESSIONS_DIR = os.path.expanduser("~/.pi/agent/sessions")
+SKILL_DIRS = [os.path.expanduser("~/.pi/agent/skills"), os.path.expanduser("~/.agents/skills")]
 BUSY_MAX_S = 10 * 60      # Log endet mit offener Anfrage: so lange gilt der Agent als beschäftigt
 SESSION_FRESH_S = 15 * 60  # Logs, die länger ruhen, gelten als inaktiv
 RATE_WINDOW_S = 90         # Log-Fallback: Antworten der letzten 90 s mitteln
@@ -35,6 +37,8 @@ class Agent:
     key: str
     title: str
     source: str  # live | log | demo
+    harness: str = "pi"   # pi | claude | codex | demo
+    skill: str = ""       # ausgeführter Skill (aus /skill:name bzw. /name am Prompt-Anfang)
     phase: str = "idle"
     prompt: str = ""
     model: str = ""
@@ -80,6 +84,37 @@ def pid_alive(pid: int) -> bool:
         return True
     except Exception:
         return False
+
+
+_SKILL_NAMES: set[str] | None = None
+
+
+def skill_names() -> set[str]:
+    """Installierte Skill-Namen (Verzeichnisname = Skill-Name)."""
+    global _SKILL_NAMES
+    if _SKILL_NAMES is None:
+        names = set()
+        for base in SKILL_DIRS:
+            if not os.path.isdir(base):
+                continue
+            for dirpath, dirnames, files in os.walk(base):
+                if "SKILL.md" in files:
+                    names.add(os.path.basename(dirpath).lower())
+        _SKILL_NAMES = names
+    return _SKILL_NAMES
+
+
+def skill_from_prompt(prompt: str) -> str:
+    """Erkannter Skill aus dem Prompt: `/skill:name` bzw. `/name` am Anfang oder das erste Wort,
+    wenn es ein installierter Skill ist (deutsche Prompts beginnen oft mit dem Skillnamen)."""
+    text = (prompt or "").strip()
+    m = re.match(r"/(?:skill:)?([a-zA-Z][a-zA-Z0-9-]{2,})", text)
+    if m:
+        return m.group(1).lower()
+    m = re.match(r"([a-zA-Z][a-zA-Z0-9-]{4,})[,: ]", text)
+    if m and m.group(1).lower() in skill_names():
+        return m.group(1).lower()
+    return ""
 
 
 def _short_cwd(cwd: str) -> str:
@@ -135,6 +170,7 @@ def agent_from_state(s: dict) -> Agent:
         tok_in=tok.get("input", 0),
         tok_out=tok.get("output", 0),
         rate=float(tok.get("rateOut", 0) or 0),
+        skill=skill_from_prompt(s.get("prompt", "")),
         tools=list(s.get("tools") or []),
         tool_counts=dict(s.get("toolCounts") or {}),
         errors=s.get("errors", 0),
@@ -329,6 +365,7 @@ def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: floa
     if not any_entry:
         return None
     a.title = a.title or _short_cwd(cwd or "pi")
+    a.skill = skill_from_prompt(a.prompt)
     a.tools = list(pending.values())
     a.rate = log_rate(samples, now, last_entry)
     a.rate_est = a.rate > 0
@@ -389,8 +426,11 @@ def read_sessions(exclude: set[str], sessions_dir: str = SESSIONS_DIR, now: floa
 
 
 def collect(now: float | None = None) -> list[Agent]:
+    """Alle Harnessse: pi (live, sonst Log) zuerst, dann Claude Code und Codex."""
     live, sessions = read_live()
-    return live + read_sessions(sessions, now=now)
+    pi = live + read_sessions(sessions, now=now)
+    from . import harnesses
+    return pi + harnesses.read_claude(now=now) + harnesses.read_codex(now=now)
 
 
 # --------------------------------------------------------------------- Demo
@@ -450,4 +490,16 @@ def demo_agents(t: float) -> list[Agent]:
         a.idle_since = time.time() - (cyc - 9 * 4.8)
     c = Agent(key="demo:3", title="more-re", source="demo", phase="idle", prompt=DEMO_PROMPTS[2], model="claude-sonnet-5-5",
               ctx_tokens=20000, ctx_window=200000, ctx_percent=10, tok_total=120000, updated=time.time())
-    return [a, b, c]
+    d = Agent(key="demo:4", title="vault", source="demo", harness="claude", skill="vaultdev", phase=["streaming", "tool", "thinking"][int(t / 6) % 3],
+              prompt="vaultdev", model="claude-opus-5-5", turn=int(t / 5),
+              ctx_tokens=88000, ctx_window=200000, ctx_percent=44, tok_total=int(t * 900) % 500000,
+              rate=max(0.0, 30 + 20 * math.sin(t * 0.9)),
+              tools=[{"name": "bash", "label": "cargo test", "started": 0}] if int(t / 6) % 3 == 1 else [],
+              tool_counts={"bash": 7, "edit": 5}, errors=1, last_error="cargo: linking failed",
+              events=[{"seq": 1, "kind": "tool", "text": "bash: cargo test", "at": 0}], updated=time.time())
+    e = Agent(key="demo:5", title="pi-hub", source="demo", harness="codex", phase=["thinking", "tool"][int(t / 7) % 2],
+              prompt="refactor the hub", model="gpt-6.1-sol", turn=int(t / 8),
+              ctx_tokens=150000, ctx_window=475000, ctx_percent=32, tok_total=int(t * 400) % 300000, rate=max(0.0, 12 + 8 * math.sin(t * 1.4)),
+              tools=[{"name": "exec", "label": "rg token_count", "started": 0}] if int(t / 7) % 2 else [],
+              tool_counts={"exec": 11}, events=[{"seq": 1, "kind": "tool", "text": "exec: rg token_count", "at": 0}], updated=time.time())
+    return [a, b, c, d, e]

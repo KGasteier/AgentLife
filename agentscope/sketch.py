@@ -87,9 +87,10 @@ def _seed(*k) -> int:
 
 
 class Pen:
-    def __init__(self, cr: cairo.Context, boil: int = 0, font: str | None = None):
+    def __init__(self, cr: cairo.Context, boil: int = 0, font: str | None = None, ink=None):
         self.cr = cr
         self.boil = boil
+        self.ink = tuple(ink) if ink is not None else INK   # Harness-Umrissfarbe (pi = INK)
         self.font = font or pick_font()
         self.hand = hand_font() if font is None else font
         self._cache: dict = {}
@@ -130,9 +131,13 @@ class Pen:
         self._cache[key] = pts
         return pts
 
+    def rgb(self, color):
+        """Basis-INK durch die Panel-Tinte ersetzen; alle anderen Farben bleiben."""
+        return self.ink if color == INK or color is None else color
+
     def _stroke(self, color, w, dash=None):
         cr = self.cr
-        cr.set_source_rgb(*color)
+        cr.set_source_rgb(*self.rgb(color))
         cr.set_line_width(w)
         if dash:
             cr.set_dash(dash)
@@ -275,7 +280,7 @@ class Pen:
             x -= width / 2
         elif align == "right":
             x -= width
-        cr.set_source_rgb(*color)
+        cr.set_source_rgb(*self.rgb(color))
         if self._text_cached(s, x, y, size, color, bold, hand, jitter, width):
             return width
         # Schrift „kocht“ nicht mit: ruhiger Text liest sich besser und flackert nicht (Seed ohne boil)
@@ -335,7 +340,7 @@ class Pen:
         cr.save()
         cr.identity_matrix()
         cr.scale(1 / ds, 1 / ds)
-        cr.set_source_rgb(*color)
+        cr.set_source_rgb(*self.rgb(color))
         cr.mask_surface(surf, ix - ox, iy - oy)
         cr.restore()
         return True
@@ -410,7 +415,7 @@ class Pen:
         rb = min(CLOUD_RB, d * 0.72)        # > d/2: Nachbarbögen schneiden sich außerhalb der Ellipse
         pts = [(cx + a * math.cos(2 * math.pi * (i + 0.3) / n), cy + b * math.sin(2 * math.pi * (i + 0.3) / n)) for i in range(n)]
         cr = self.cr
-        cr.set_source_rgb(*color)          # Umriss der Vereinigung: dick umranden, dann innen weiß füllen
+        cr.set_source_rgb(*self.rgb(color))          # Umriss der Vereinigung: dick umranden, dann innen weiß füllen
         for x, y in pts:
             self._circle_path(x, y, rb)
             cr.set_line_width(2 * w)
@@ -578,7 +583,7 @@ class Pen:
         elif eyes == "dots":
             for dx in (-4, 5):
                 self.cr.arc(head[0] + dx * s * sg, head[1] - 2 * s, 1.6 * s, 0, 6.3)
-                self.cr.set_source_rgb(*color)
+                self.cr.set_source_rgb(*self.rgb(color))
                 self.cr.fill()
         return {"hl": hl, "hr": hr, "head": head, "sh": sh, "hip": hip, "kl": kl, "kr": kr, "fl": fl, "fr": fr}
 
@@ -672,7 +677,7 @@ class Pen:
         cr.scale(1.0, 0.72)
         cr.arc(0, 0, 4.2 * s, 0, 2 * math.pi)
         cr.restore()
-        cr.set_source_rgb(*color)
+        cr.set_source_rgb(*self.rgb(color))
         cr.fill()
         top = y - 20 * s
         self.line(x + 3.6 * s, y - 1 * s, x + 3.6 * s, top, w=1.6 * s, color=color, amp=0)

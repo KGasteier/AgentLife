@@ -185,7 +185,8 @@ class StaticLayer:
 
     @staticmethod
     def make_key(W, H, agents, max_panels=4):
-        return (round(W), round(H), tuple(a.title for a in agents[:max_panels]), len(agents) > max_panels)
+        return (round(W), round(H), tuple(panel_title(a) for a in agents[:max_panels]),
+                tuple(getattr(a, "harness", "pi") for a in agents[:max_panels]), len(agents) > max_panels)
 
     def paint(self, cr, W, H, agents, max_panels=4):
         key = self.make_key(W, H, agents, max_panels)
@@ -240,20 +241,36 @@ def render_empty(p: Pen, W, H, t, top, bottom):
 
 
 # ======================================================================== Panel
+def harness_ink(a: Agent):
+    """Dezent andere Umrissfarbe je Harness (pi bleibt Tinte)."""
+    return {"pi": INK, "claude": (0.72, 0.36, 0.14), "codex": (0.13, 0.44, 0.34),
+            "demo": INK}.get(getattr(a, "harness", "pi") or "pi", INK)
+
+
+def panel_title(a: Agent) -> str:
+    """Beschriftung links oben: Harness · gekürzter Skill- oder Sitzungsname."""
+    harness = getattr(a, "harness", "pi") or "pi"
+    short = (getattr(a, "skill", "") or a.title or "?").strip()
+    return f"{harness} · {short}"
+
+
 def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
-    title = p.fit(a.title, 22, 420)
+    ink = harness_ink(a)
+    p.ink = ink
+    title = p.fit(panel_title(a), 22, 420)
     tw = p.text_width(title, 22, bold=True)
     if p.st:
-        p.rect(0, 0, PW, PH, lw=3)
+        p.rect(0, 0, PW, PH, lw=3, color=ink)
         # Beschriftungskasten wie xkcd-Caption
-        p.rect(-1, -1, tw + 36, 40, lw=2.4, fill=PAPER)
-        p.text(title, 16, 28, 22, bold=True)
+        p.rect(-1, -1, tw + 36, 40, lw=2.4, color=ink, fill=PAPER)
+        p.text(title, 16, 28, 22, bold=True, color=ink)
         p.line(20, FLOOR, 440, FLOOR, w=1.6, color=GRAY)
     if p.dy:
         phase_txt = PHASE_WORDS.get(a.phase, a.phase)
         p.text(f"{a.model or '?'} · Runde {a.turn} · {phase_txt}", tw + 52, 28, 15, color=GRAY, maxw=820 - tw - 52)
         if a.source == "log":
-            p.text("(aus dem Sitzungslog)", 830, 28, 12, color=GRAY, align="right")
+            p.text("(aus dem Sitzungslog)" if a.harness == "pi" else f"({a.harness}-Sitzungslog)",
+                   830, 28, 12, color=GRAY, align="right")
         draw_actor(p, a, t)
         from . import acts
         if a.phase not in ("retrying",) and not (a.phase == "idle" and (a.idle_for or 1e9) < acts.FINALE_S):

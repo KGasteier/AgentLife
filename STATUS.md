@@ -1,5 +1,13 @@
 # STATUS
 
+## Stand 0.7.0
+- **Fremd-Harnessse:** `agentscope/harnesses.py` liest Sitzungs-Logs von **Claude Code** (`~/.claude/projects/<slug>/*.jsonl`) und **Codex** (`~/.codex/sessions/JJJJ/MM/TT/rollout-*.jsonl`) und rekonstruiert daraus Panels (`harness="claude"|"codex"`, nur außerhalb pi). `model.collect` mischt pi (live/Log) zuerst, dann Claude, dann Codex; höchstens zwei Panels je Fremd-Harness, frisch ≤ 30 min.
+  - Claude: `ai-title`/`last-prompt` als Titel, `assistant.message.usage` für Kontext/Tokens/Rate, `isCompactSummary` als Kompaktierung, `is_error`-Tool-Ergebnisse als Hoppla.
+  - Codex: `session_meta`/`turn_context` (Kopf der Datei, nicht nur Tail!), `token_count.info` für Kontext/Fenster, `token_usage_record` für Tokens/Rate, `compacted` als Kompaktierung, `exec`-Ausgabe mit `exit_code≠0` als Hoppla.
+- **Harness im Titel + Farben:** Panel-Beschriftung jetzt `harness · Skill/Sitzung` (`scene.panel_title`), z. B. `pi · vaultdev`. Jeder Harness hat eine **dezent andere Umrissfarbe** (`scene.harness_ink`: pi Tinte, Claude warm-braun, Codex grün-blau); die Tinte wird zentral über `Pen.ink`/`Pen.rgb` durch alle Primitiven gereicht. Der statische Ebenenschlüssel enthält Harness und Titel.
+- **Skill-Erkennung:** `model.skill_from_prompt` liest `/skill:name`, `/name` oder ein erstes Wort, das einem installierten Skill entspricht (Verzeichnisse aus `~/.pi/agent/skills`, `~/.agents/skills`).
+- Demo zeigt jetzt fünf Panels (zwei pi, je einer Claude/Codex). Tests: node 12, Python 52 (+`HarnessTest` mit Kopf/Tail-Regression).
+
 ## Stand 0.4.1
 - **Schrift wieder scharf:** GTK4 liefert eine Aufzeichnungsfläche mit Maßstab 1, die erst später auf Skalierung 2 gerastert wird. Statische Ebene und Textmasken wurden deshalb in halber Auflösung gebaut und hochskaliert. Jetzt Maßstab über `area.get_scale_factor()` (`sketch.HINT_SCALE`). Regressionstest `test_regression_hidpi_text_stays_sharp`.
 - **Panel-Titel = Sitzungsname** (`/name`): Live-Datei `sessionName`, sonst letzter `session_info` aus der Sitzungsdatei, sonst Verzeichnis. Ohne Namen zeigt das Panel das Verzeichnis (z. B. `~`).

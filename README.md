@@ -1,8 +1,9 @@
-# agentscope – xkcd-Screensaver für pi-Agenten
+# agentscope – xkcd-Screensaver für Agenten (pi, Claude Code, Codex)
 
 Ein Vollbild-Screensaver für Omarchy (Hyprland), der im Strichmännchen-Stil von xkcd zeigt,
-was **alle laufenden pi-Agenten** gerade tun – inklusive Subagents, Tokenverbrauch,
-Kontextfüllung, Kompaktierung und Fehlern.
+was **alle laufenden Agenten** gerade tun – inklusive Subagents, Tokenverbrauch,
+Kontextfüllung, Kompaktierung und Fehlern. Mehrere Harnessse gleichzeitig:
+**pi** (live über eine Erweiterung), **Claude Code** und **Codex** (aus ihren Sitzungs-Logs).
 
 ![Demo](docs/demo.png)
 
@@ -21,7 +22,9 @@ Beenden im Vollbild: beliebige Taste, Mausklick oder Mausbewegung (erst nach 1 s
 
 ## Was man sieht
 
-Jeder pi-Prozess ist ein Comic-Panel:
+Jeder Agent ist ein Comic-Panel. Die Beschriftung links oben nennt den **Harness** und den
+gekürzten **Skill- bzw. Sitzungsnamen** (z. B. `pi · vaultdev`); ein dezent anderer Umriss
+unterscheidet die Harnessse (pi = Tinte, Claude Code = warm-braun, Codex = grün-blaue Tinte).
 
 | Bild | Bedeutung |
 |---|---|
@@ -42,7 +45,14 @@ Jeder pi-Prozess ist ein Comic-Panel:
    (TUI, RPC/copi, Subagent-Kinder). Erst **neu gestartete** pi-Prozesse laden sie.
    Abschalten: `AGENTSCOPE=off`.
 2. **Fallback Session-Logs** (`~/.pi/agent/sessions/**/*.jsonl`, < 15 min alt): für pi-Prozesse
-   ohne Erweiterung. Panel zeigt „(from session log)“; keine Live-Tokenrate.
+   ohne Erweiterung. Panel zeigt „(aus dem Sitzungslog)“; keine Live-Tokenrate.
+
+3. **Claude Code** (`~/.claude/projects/<slug>/*.jsonl`, < 30 min alt): `ai-title`/`last-prompt`,
+   `assistant.message.usage`, `isCompactSummary`, fehlerhafte Tool-Ergebnisse. Panel zeigt „(claude-Sitzungslog)“.
+4. **Codex** (`~/.codex/sessions/JJJJ/MM/TT/rollout-*.jsonl`, < 30 min alt): `session_meta`/`turn_context`,
+   `token_count`, `token_usage_record`, `compacted`, `exec` mit `exit_code≠0`. Panel zeigt „(codex-Sitzungslog)“.
+   Je Fremd-Harness höchstens zwei Panels; Codex-Sitzungsmetadaten stehen nur am Dateianfang und werden
+   deshalb zusätzlich zum Ende gelesen.
 
 Schema: [docs/STATE.md](docs/STATE.md) · Konzept: [docs/SPEC.md](docs/SPEC.md) · Stand: [STATUS.md](STATUS.md)
 

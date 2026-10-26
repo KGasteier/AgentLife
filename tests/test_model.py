@@ -125,6 +125,109 @@ class SessionTest(unittest.TestCase):
             self.assertEqual([a.key for a in got], [f"log:{fresh}"])
 
 
+class HarnessTest(unittest.TestCase):
+    """Fremd-Harnessse (Claude Code, Codex) aus ihren Sitzungs-Logs rekonstruieren."""
+
+    def _write(self, d, name, lines):
+        f = os.path.join(d, name)
+        os.makedirs(os.path.dirname(f), exist_ok=True)
+        with open(f, "w") as fh:
+            for ln in lines:
+                fh.write(json.dumps(ln) + "\n")
+        return f
+
+    def claude_lines(self):
+        now = time.time()
+        ts = lambda k: __import__("datetime").datetime.fromtimestamp(now + k, tz=__import__("datetime").timezone.utc).isoformat()
+        return [
+            {"type": "mode", "cwd": "/home/x/Work/vault"},
+            {"type": "ai-title", "aiTitle": "Vault-Editor"},
+            {"type": "user", "timestamp": ts(-20), "cwd": "/home/x/Work/vault",
+             "message": {"role": "user", "content": "vaultdev bau den Editor"}},
+            {"type": "assistant", "timestamp": ts(-18), "message": {"model": "claude-opus-5-5", "stop_reason": "tool_use",
+             "usage": {"input_tokens": 100, "cache_read_input_tokens": 400, "cache_creation_input_tokens": 0, "output_tokens": 30},
+             "content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "cargo test"}}]}},
+            {"type": "user", "timestamp": ts(-10), "message": {"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": "t1", "is_error": True, "content": "cargo: linking failed"}]}},
+            {"type": "user", "timestamp": ts(-9), "isCompactSummary": True, "message": {"role": "user", "content": "summary"}},
+        ]
+
+    def test_claude_log_is_reconstructed(self):
+        from agentscope import harnesses
+        with tempfile.TemporaryDirectory() as d:
+            f = self._write(d, "-home-x-Work/vault.jsonl", self.claude_lines())
+            a = harnesses.agent_from_claude_lines(harnesses._tail_lines(f), f, os.path.getmtime(f), time.time())
+        self.assertEqual(a.harness, "claude")
+        self.assertEqual(a.title, "Vault-Editor")
+        self.assertEqual(a.skill, "vaultdev")          # /name am Prompt-Anfang
+        self.assertEqual(a.model, "claude-opus-5-5")
+        self.assertEqual(a.tool_counts, {"bash": 1})
+        self.assertEqual(a.errors, 1)
+        self.assertEqual(a.compact_count, 1)
+        self.assertEqual(a.ctx_tokens, 530)
+        self.assertEqual(a.tok_out, 30)
+
+    def codex_lines(self):
+        now = time.time()
+        ts = lambda k: __import__("datetime").datetime.fromtimestamp(now + k, tz=__import__("datetime").timezone.utc).isoformat()
+        return [
+            {"type": "session_meta", "timestamp": ts(-30), "payload": {"cwd": "/home/x/Work/pi-hub", "model": "gpt-6.1-sol"}},
+            {"type": "turn_context", "timestamp": ts(-29), "payload": {"cwd": "/home/x/Work/pi-hub", "model": "gpt-6.1-sol"}},
+            {"type": "event_msg", "timestamp": ts(-28), "payload": {"type": "task_started"}},
+            {"type": "event_msg", "timestamp": ts(-27), "payload": {"type": "item_completed", "item": {"type": "UserMessage",
+             "content": [{"type": "text", "text": "/tangent2dev mach weiter"}]}}},
+            {"type": "response_item", "timestamp": ts(-20), "payload": {"type": "custom_tool_call", "call_id": "c1", "name": "exec", "input": "rg token_count"}},
+            {"type": "response_item", "timestamp": ts(-18), "payload": {"type": "custom_tool_call_output", "call_id": "c1",
+             "output": [{"type": "text", "text": '{"exit_code":1,"Output":"nichts gefunden"}'}]}},
+            {"type": "token_usage_record", "timestamp": ts(-17), "payload": {"usage": {"input_tokens": 800, "output_tokens": 200, "total_tokens": 1000}}},
+            {"type": "event_msg", "timestamp": ts(-16), "payload": {"type": "token_count", "info": {"last_token_usage": {"total_tokens": 21000},
+             "total_token_usage": {"total_tokens": 1000}, "model_context_window": 475000}}},
+            {"type": "compacted", "timestamp": ts(-15), "payload": {"replacement_history": []}},
+            {"type": "event_msg", "timestamp": ts(-14), "payload": {"type": "task_complete"}},
+        ]
+
+    def test_codex_log_is_reconstructed(self):
+        from agentscope import harnesses
+        with tempfile.TemporaryDirectory() as d:
+            f = self._write(d, "2026/01/02/rollout-x.jsonl", self.codex_lines())
+            a = harnesses.agent_from_codex_lines(harnesses._whole_or_split(f, model.TAIL_BYTES), f, os.path.getmtime(f), time.time())
+        self.assertEqual(a.harness, "codex")
+        self.assertEqual(a.skill, "tangent2dev")        # /name am Prompt-Anfang
+        self.assertEqual(a.model, "gpt-6.1-sol")
+        self.assertEqual(a.tool_counts, {"exec": 1})
+        self.assertEqual(a.errors, 1)
+        self.assertEqual(a.compact_count, 1)
+        self.assertEqual(a.ctx_tokens, 21000)
+        self.assertEqual(a.ctx_window, 475000)
+        self.assertEqual(a.tok_total, 1000)
+
+    def test_codex_head_carries_session_meta_for_big_files(self):
+        """Regression: session_meta/turn_context stehen nur am Dateianfang – der Tail allein verliert das Modell."""
+        from agentscope import harnesses
+        with tempfile.TemporaryDirectory() as d:
+            lines = self.codex_lines() + [{"type": "event_msg", "timestamp": "2026-01-02T03:00:00+00:00",
+                                           "payload": {"type": "item_completed", "item": {"type": "UserMessage", "content": [{"type": "text", "text": "x"}]}}}]
+            f = self._write(d, "2026/01/02/rollout-big.jsonl", lines)
+            # Datei künstlich größer als das Tail-Fenster machen
+            with open(f, "a") as fh:
+                fh.write("\n".join(json.dumps({"type": "pad", "payload": {"p": "y" * 400}}) for _ in range(2500)) + "\n")
+            self.assertGreater(os.path.getsize(f), model.TAIL_BYTES)
+            a = harnesses.agent_from_codex_lines(harnesses._whole_or_split(f, model.TAIL_BYTES), f, os.path.getmtime(f), time.time())
+        self.assertEqual(a.model, "gpt-6.1-sol")
+        self.assertEqual(a.harness, "codex")
+
+    def test_regression_panel_title_names_harness_and_skill(self):
+        """Der Panel-Titel nennt den Harness und den gekürzten Skill- bzw. Sitzungsnamen."""
+        a = model.Agent(key="k", title="Screensaver-Agent", source="live", harness="pi", skill="vaultdev")
+        self.assertEqual(scene.panel_title(a), "pi · vaultdev")
+        b = model.Agent(key="k", title="Vault-Editor", source="log", harness="claude")
+        self.assertEqual(scene.panel_title(b), "claude · Vault-Editor")
+        self.assertEqual((0.72, 0.36, 0.14), scene.harness_ink(b))
+        self.assertEqual(scene.INK, scene.harness_ink(a))
+        self.assertNotEqual(scene.harness_ink(a), scene.harness_ink(b))
+        self.assertNotEqual(scene.harness_ink(b), scene.harness_ink(model.Agent(key="k", title="t", source="log", harness="codex")))
+
+
 class SceneTest(unittest.TestCase):
     def render(self, agents, t=3.0, W=1280, H=720):
         surf = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
