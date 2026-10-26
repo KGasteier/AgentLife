@@ -23,7 +23,7 @@ import cairo
 from . import dance
 from .model import Agent
 from . import sketch
-from .sketch import LEG, BLUE, GRAY, INK, LIGHT, PAPER, PINK, RED, Pen
+from .sketch import LEG, BLUE, GRAY, INK, LIGHT, ORANGE, PAPER, PINK, RED, Pen
 
 PW, PH = 1000.0, 560.0  # virtuelles Panel
 FLOOR = 376.0
@@ -265,10 +265,10 @@ def has_connect(a: Agent) -> bool:
 
 
 def model_ink(a: Agent):
-    """Farbe des Modellnamens: blau = verbunden, rot = angewählt aber keine Anbindung, grau = kein Modell."""
+    """Farbe des Modellnamens: pink wie das Gehirn = verbunden, orange = Anbindung defekt, grau = kein Modell."""
     if not has_model(a):
         return GRAY
-    return BLUE if has_connect(a) else RED
+    return PINK if has_connect(a) else ORANGE
 
 
 def brain_pos(a: Agent, title_width: float):
@@ -330,10 +330,10 @@ def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
             tail = f" · Runde {a.turn} · {phase_txt}"
             if not has_connect(a):
                 tail = f" · {tail.strip(' ·')} · keine Anbindung!"
-            p.text(tail, tw + 82 + mw + 4, 28, 15, color=RED if not has_connect(a) else GRAY,
+            p.text(tail, tw + 82 + mw + 4, 28, 15, color=ORANGE if not has_connect(a) else GRAY,
                    maxw=820 - tw - 82 - mw - 4)
         else:
-            p.text("kein Modell · getrennt", tw + 82, 28, 15, color=PINK, maxw=820 - tw - 82)
+            p.text("kein Modell · getrennt", tw + 82, 28, 15, color=GRAY, maxw=820 - tw - 82)
         if a.source == "log":
             p.text("(aus dem Sitzungslog)" if a.harness == "pi" else f"({a.harness}-Sitzungslog)",
                    830, 28, 12, color=GRAY, align="right")

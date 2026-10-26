@@ -27,13 +27,13 @@ gekürzten **Skill- bzw. Sitzungsnamen** (z. B. `pi · vaultdev`); gibt es keine
 eine kurze Sitzungskennung. Ein dezent getönter **Titelkasten** unterscheidet die Harnessse
 (pi = grau, Claude Code = warm, Codex = grün-blau) – die **Skizzenlinien selbst bleiben schwarz**.
 Rechts vom Titelkasten, links vom **farbigen Modellnamen**, sitzt ein **pinkes Cartoon-Gehirn**
-(Blattwindungen, Sylvische Furche, Kleinhirn); ein feiner pinker **Faden** führt von seinem Stiel
+(dichte Windungen, geriffeltes Kleinhirn, Stiel); ein feiner pinker **Faden** führt von seinem Stiel
 zum Kopf der Figur, wackelt in jeder Pose mit und verschwindet hinter Sprech- und Gedankenblasen.
-Der Modellname ist **blau**, wenn die Anbindung steht. Ist **kein Modell** angewählt, ist die
+Der Modellname ist **pink**, wenn die Anbindung steht. Ist **kein Modell** angewählt, ist die
 Verbindung getrennt: eine leblose Puppe hängt grau im Stuhl, der Faden baumelt abgerissen unter dem
 Gehirn („kein Signal“), und Tacho, Kontextglas, Kurve, Notizblock, Werkzeugbalken und Hoppla-Zähler
 zeigen keine Aktivität mehr. Ist ein Modell **angewählt, aber pi kommt nicht durch** (falscher
-Schlüssel, Zeitüberschreitung), bleibt der Modellname **rot**, der Faden ist rot und zuckt mit
+Schlüssel, Zeitüberschreitung), wird der Modellname **orange**, der Faden ist rot und zuckt mit
 Blitzstelle („unterbrochen“), und im Titel steht „keine Anbindung!“.
 
 | Bild | Bedeutung |
@@ -80,11 +80,11 @@ o.window("org.omarchy.agentscope", { fullscreen = true })
 ```
 
 Abhängigkeiten: python3 mit GObject (GTK 4) und pycairo – auf Omarchy vorhanden.
-Schrift: Überschriften und Blasen in **Steel City Comic** (mitgeliefert unter `agentscope/fonts/`, frei
-nutzbar mit Namensnennung an Steel City, wird nur für den Prozess geladen). Diese Schrift hat keine
-Umlaute und keine Haken-/Pfeilzeichen; fehlende Zeichen holt der Zeichner automatisch aus
-**Kalam** (Handschrift-Ersatz, ebenfalls mitgeliefert) bzw. einer Symbolschrift. Fließtext nimmt
-`xkcd Script`/`Humor Sans`, falls installiert, sonst `URW Gothic`.
+Schrift: Überschriften und Blasen in **Steel Umlaut City** (mitgeliefert unter `agentscope/fonts/`,
+Ableitung von Steel City Comic – frei nutzbar mit Namensnennung an Steel City, wird nur für den
+Prozess geladen). Die Ableitung bringt Umlaute und ß mit; für ✓/↻ holt der Zeichner die Zeichen
+automatisch aus **Kalam** (Handschrift-Ersatz, ebenfalls mitgeliefert) bzw. einer Symbolschrift.
+Fließtext nimmt `xkcd Script`/`Humor Sans`, falls installiert, sonst `URW Gothic`.
 
 ## Tests
 

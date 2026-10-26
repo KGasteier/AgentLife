@@ -39,18 +39,27 @@ def pose(style: str, t: float, cx: float, base: float, s: float) -> dict:
     lift, lean, flip, splay, look = 0.0, 0.0, False, True, 0.0
     props: list = []
     hx = cx
-    if style == "disco":                         # Saturday Night Fever: Finger hoch – runter über Kreuz
+    if style == "disco":                         # Saturday Night Fever: Hüfte schwingt, Arm zeigt hoch – runter über Kreuz
         b = t * 2.0
-        k = _ease(abs(((b % 2) - 1)))            # 1 = oben, 0 = unten
-        hx += 2.5 * s * math.sin(math.pi * b)
-        crouch = 2 * s * (1 - k)
+        k = _ease(abs(((b % 2) - 1)))            # 1 = Arm oben, 0 = Arm unten
+        sway = math.sin(2 * math.pi * b)         # Gewichtsverlagerung von Seite zu Seite
+        hx += 5.5 * s * sway                     # deutliche Hüftbewegung
+        crouch = 2.5 * s * (1 - k) + 1.2 * s * abs(sway)
         hy = base - 2 * L + crouch
-        sh = Pen.anchors(hx, hy, s=s)["sh"]
-        hand_r = _mix((sh[0] - 0.9 * A, sh[1] + 1.4 * A), (sh[0] + 1.3 * A, sh[1] - 1.4 * A), k)
-        hand_l = (sh[0] - 0.8 * A, sh[1] + 1.1 * A)          # Hand in der Hüfte
+        sh = Pen.anchors(hx, hy, s=s, lean=8 * sway)["sh"]
+        # der Zeigearm fährt weit über den Kopf, der andere gräbt sich in die Hüfte
+        # (IK-Reichweite: Schulter + 2*ARM, daher auf ~1.9*ARM begrenzt)
+        hand_r = _mix((sh[0] - 0.85 * A - 0.35 * A * sway, sh[1] + 1.05 * A),
+                      (sh[0] + 1.05 * A + 0.35 * A * sway, sh[1] - 1.45 * A), k)
+        hand_l = _mix((sh[0] - 1.05 * A + 0.35 * A * sway, sh[1] + 1.20 * A),
+                      (sh[0] - 0.45 * A, sh[1] + 0.35 * A), k)
         tap = abs(math.sin(math.pi * b))
-        feet = ((hx - 0.35 * L, base), (hx + 0.45 * L + 0.25 * L * tap, base - 0.15 * L * tap))
-        lean = -6 * k + 3
+        # Standbein wechselt mit dem Schwung, das andere tippt auf den Takt
+        lw_ = 0.5 * (1 + sway)
+        feet = ((hx - 0.25 * L - 0.35 * L * (1 - lw_), base),
+                (hx + 0.25 * L + 0.35 * L * lw_, base - 0.30 * L * tap))
+        lean = -8 * k + 4 * sway
+        look = 12 * sway
     elif style == "gangnam":                     # Galopp-Hüpfer, Handgelenke gekreuzt / Lasso
         b = t * 2.6
         lift = abs(math.sin(math.pi * b)) * 0.28 * L

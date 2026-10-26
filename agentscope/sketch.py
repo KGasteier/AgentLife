@@ -24,18 +24,19 @@ GRAY = (0.6, 0.6, 0.6)
 LIGHT = (0.86, 0.86, 0.86)
 PAPER = (1.0, 1.0, 1.0)
 PINK = (0.85, 0.25, 0.5)   # Gehirn und Verbindungsfaden zum Modell
+ORANGE = (0.90, 0.48, 0.09)  # Modellname bei defekter Anbindung
 
 FONT_CANDIDATES = ["xkcd Script", "xkcd", "Humor Sans", "Comic Neue", "URW Gothic"]
-HAND_FONT = "Steel City Comic"          # Comic-Handschrift für Überschriften und Blasen (agentscope/fonts)
-# Steel City Comic kennt keine Umlaute und kaum Sonderzeichen – diese Familien springen zeichenweise ein.
-# Kalam übernimmt Umlaute und Satzzeichen in Handschrift-Optik; die Symbolschriften retten ✓/↻.
+HAND_FONT = "Steel Umlaut City"        # Steel City Comic inkl. Umlaute/ß (agentscope/fonts)
+# Steel Umlaut City deckt Umlaute und ß selbst ab; für die übrigen Sonderzeichen (·»–„→♪✓↻)
+# springen diese Familien zeichenweise ein. Kalam hält die Handschrift-Optik; die Symbolschriften retten ✓/↻.
 HAND_FALLBACK = ["Kalam", "Adwaita Sans", "DejaVu Sans", "Noto Sans Symbols 2", "Symbola"]
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
 
 @lru_cache(maxsize=1)
 def register_fonts() -> bool:
-    """Mitgelieferte Schriften (Steel City Comic) für diesen Prozess bei fontconfig anmelden.
+    """Mitgelieferte Schriften (Steel City/Umlaut City) für diesen Prozess bei fontconfig anmelden.
 
     Muss vor der ersten Schriftauswahl laufen; keine Installation ins System nötig."""
     try:
@@ -51,7 +52,7 @@ def register_fonts() -> bool:
 
 @lru_cache(maxsize=1)
 def hand_font() -> str:
-    """Steel City Comic, falls registrierbar/installiert, sonst die Grundschrift."""
+    """Steel Umlaut City (Steel City Comic + Umlaute/ß), sonst die Grundschrift."""
     register_fonts()
     try:
         fams = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True, timeout=5).stdout
@@ -78,7 +79,12 @@ def pick_font() -> str:
 
 
 # Oberlänge (Bruchteil der Schriftgröße) für die erste Textzeile je Handschriftfamilie
-_BASELINE_EM = {"Steel City Comic": 0.70, "Kalam": 0.78}
+_BASELINE_EM = {"Steel Umlaut City": 0.70, "Steel City Comic": 0.70, "Kalam": 0.78}
+
+# Grundlinien-Wackeln und Neigung der Comicschrift (in em-Anteilen, ×1/18).
+# 0.8.2c: deutlich ruhiger als zuvor (±1.5/±0.08), damit Sprechblasen lesbar bleiben.
+HAND_WOBBLE = 0.55
+HAND_TILT = 0.035
 
 _ADV: dict = {}
 _MASKS: dict = {}
@@ -362,8 +368,8 @@ class Pen:
             adv = self._adv(ch)
             dy = r.uniform(-0.9, 0.9) * jitter * size / 18
             if hand:
-                dy += r.uniform(-1.5, 1.5) * size / 18      # Grundlinien-Wackeln der Handschrift
-            out.append((ch, cx + adv / 2, y + dy, r.uniform(-0.08, 0.08) * jitter, adv))
+                dy += r.uniform(-HAND_WOBBLE, HAND_WOBBLE) * size / 18     # ruhige Handschrift-Grundlinie
+            out.append((ch, cx + adv / 2, y + dy, r.uniform(-HAND_TILT, HAND_TILT) * jitter, adv))
             cx += adv
         return out
 
@@ -422,11 +428,11 @@ class Pen:
             if ch != " ":
                 dy = r.uniform(-0.9, 0.9) * jitter * size / 18
                 if hand:
-                    dy += r.uniform(-1.5, 1.5) * size / 18      # Grundlinie der Handschrift wackelt leicht
+                    dy += r.uniform(-HAND_WOBBLE, HAND_WOBBLE) * size / 18   # ruhige Handschrift-Grundlinie
                 cr.save()
                 self._select(cr, ch, size, self._bold, hand)
                 cr.translate(cx + adv / 2, y0 + dy)
-                cr.rotate(r.uniform(-0.08, 0.08) * jitter)
+                cr.rotate(r.uniform(-HAND_TILT, HAND_TILT) * jitter)
                 cr.move_to(-adv / 2, 0)
                 cr.show_text(ch)
                 cr.restore()
@@ -775,62 +781,109 @@ class Pen:
         if double:
             self.line(x + 3.6 * s, top + 5 * s, x + 10 * s, top + 11 * s, w=1.6 * s, color=color, amp=0)
 
-    def brain(self, x, y, s=1.0, color=PINK, fill=(1.0, 0.87, 0.93), seed=3):
-        """Cartoon-Gehirn (pink) nach den Vorlagen hirn1–3: Umriss mit leichten Lappenbuckeln,
-        dichte Blattwindungen (Gyri) über die ganze Fläche, Sylvische Furche, geriffeltes Kleinhirn
-        unten rechts und ein Stiel. (x, y) = Mitte; gibt die Stielspitze für den Modell-Faden zurück."""
-        rr = random.Random(seed)
-        W, H = 10.6 * s, 7.0 * s                      # halbe Breite/Höhe der Hirnkuppe
-        n = 140
-        pts = []
-        for i in range(n):
+    def _wrinkle(self, cx, cy, rx, ry, seed, rot=0.0, n=11, irr=0.13):
+        """Eine Gehirnwindung: leicht unregelmäßige Blattform, an den Enden spitz (Gyri)."""
+        cr = self.cr
+        cr.new_path()
+        for i in range(n + 1):
+            a = 2 * math.pi * i / n
+            k = 1 + irr * math.sin(3 * a + seed * 0.7) + 0.06 * math.sin(5 * a + seed)
+            px = rx * k * math.cos(a)
+            py = ry * k * math.sin(a) * (1 - 0.25 * abs(math.cos(a)))
+            qx = px * math.cos(rot) - py * math.sin(rot) + cx
+            qy = px * math.sin(rot) + py * math.cos(rot) + cy
+            (cr.move_to if i == 0 else cr.line_to)(qx, qy)
+        cr.close_path()
+
+    def _blob(self, cx, cy, rx, ry, seed, rot=0.0, n=12):
+        """Rundlicher Knubbel (Kleinhirn) mit leicht welligem Rand."""
+        cr = self.cr
+        cr.new_path()
+        for i in range(n + 1):
+            a = 2 * math.pi * i / n
+            k = 1 + 0.12 * math.sin(3 * a + seed * 0.7) + 0.06 * math.sin(5 * a + seed)
+            px = rx * k * math.cos(a) * math.cos(rot) - ry * k * math.sin(a) * math.sin(rot)
+            py = rx * k * math.cos(a) * math.sin(rot) + ry * k * math.sin(a) * math.cos(rot)
+            (cr.move_to if i == 0 else cr.line_to)(cx + px, cy + py)
+        cr.close_path()
+
+    def _cerebrum(self, x, y, W, H):
+        """Großhirnkontur: runde Kuppe mit Lappenbuckeln, unterem Einschnitt für das Kleinhirn."""
+        cr = self.cr
+        cr.new_path()
+        n = 240
+        for i in range(n + 1):
             a = 2 * math.pi * i / n
             ct, st = math.cos(a), math.sin(a)
-            # breite Lappenbuckel außen + feine Riffelung: kein glattes Ei
-            bump = 1 + 0.028 * math.sin(3 * a - 0.5) + 0.016 * math.sin(7 * a + 1.4) + 0.010 * math.sin(11 * a + 0.6)
-            px = x + W * 0.94 * ct * bump
-            py = y + H * 0.94 * st * bump
-            if st > 0.10 and ct > 0.40:               # Kleinhirngrube unten rechts
-                py -= H * 0.30 * ((ct - 0.40) / 0.60) ** 1.2
-            pts.append((px, py))
-        self.poly(pts, closed=True, w=1.9, color=color, fill=fill)
-        # Windungen als Blätter (zwei gespiegelte Bögen), der Oberfläche folgend nach innen versetzt
-        folds = ((-0.62, -0.48, 0.44, -16), (-0.16, -0.56, 0.46, 2), (0.32, -0.48, 0.40, -10),
-                 (-0.72, -0.06, 0.40, 6), (-0.26, -0.10, 0.50, -12), (0.24, -0.06, 0.46, 10), (0.66, 0.02, 0.34, -8),
-                 (-0.60, 0.44, 0.36, -6), (-0.14, 0.40, 0.44, 12), (0.30, 0.42, 0.38, -10),
-                 (-0.30, -0.80, 0.34, 8), (0.20, -0.78, 0.30, -6), (0.62, 0.42, 0.26, -12))
-        coarse = s < 2.0          # klein gezeichnet würde Detailreichtum zulaufen – dann größere Windungen
-        sel = folds[::2] if coarse else folds
-        fat = 1.55 if coarse else 1.35
-        for u, v, ln, ang in sel:
-            cx, cy = x + u * W * 0.74, y + v * H * 0.74
-            a = math.radians(ang)
-            hx, hy = math.cos(a) * ln * W / 2, math.sin(a) * ln * W / 2
-            self._leaf((cx - hx, cy - hy), (cx + hx, cy + hy), (0.34 if coarse else 0.30) * H, color, w=fat)
-        # Sylvische Furche: trennt den Schläfenlappen unten ab
-        self.curve([(x - W * 0.78, y + H * 0.02), (x - W * 0.30, y + H * 0.32),
-                    (x + W * 0.16, y + H * 0.24), (x + W * 0.50, y - H * 0.04)], w=1.1, color=color)
-        # Kleinhirn: geriffelter Knubbel unten rechts
-        cx2, cy2 = x + W * 0.56, y + H * 0.64
-        self.circle(cx2, cy2, 2.7 * s, w=1.4, color=color, fill=fill)
-        for i in range(3):
-            yy = cy2 - 1.7 * s + i * 1.35 * s
-            self.line(cx2 - 2.5 * s, yy, cx2 + 2.5 * s, yy + 0.25 * s, w=0.85, color=color, amp=0)
-        self.line(cx2 - 0.9 * s, cy2 + 2.4 * s, cx2 - 1.5 * s, cy2 + 5.4 * s, w=2.0, color=color, amp=0)
-        return (x, cy2 + 5.4 * s)
+            bump = 1 + 0.030 * math.sin(6 * a + 0.5) + 0.016 * math.sin(11 * a + 1.9)
+            px = x + W * ct * bump
+            py = y + H * st * bump
+            px += W * 0.05 * (-ct)                       # vorn (links) etwas voller
+            if ct > 0.20 and st < -0.05:                 # unten rechts ausschneiden fürs Kleinhirn
+                k = (ct - 0.20) / 0.80 * ((-st - 0.05) / 0.95)
+                px -= W * 0.24 * k
+            (cr.move_to if i == 0 else cr.line_to)(px, py)
+        cr.close_path()
 
-    def _leaf(self, p1, p2, bulge, color, w=1.35):
-        """Eine Gehirnwindung: zwei gespiegelte Bögen, an beiden Enden spitz (Blattform)."""
-        ax, ay = p1
-        bx, by = p2
-        dx, dy = bx - ax, by - ay
-        L = math.hypot(dx, dy) or 1.0
-        nx, ny = -dy / L, dx / L
-        for sgn in (1, -1):
-            o, o1 = bulge * sgn, bulge * 0.70 * sgn
-            self.curve([p1, (ax + dx * 0.26 + nx * o1, ay + dy * 0.26 + ny * o1),
-                        (ax + dx * 0.50 + nx * o, ay + dy * 0.50 + ny * o),
-                        (ax + dx * 0.74 + nx * o1, ay + dy * 0.74 + ny * o1), p2], w=w, color=color)
+    def brain(self, x, y, s=1.0, color=PINK, fill=(1.0, 0.87, 0.93), seed=3):
+        """Cartoon-Gehirn (pink) nahe den Vorlagen hirn1–3.
+
+        Seitenansicht: Großhirn mit dicht an dicht liegenden Windungen (Gyri), geriffeltes Kleinhirn
+        und Stiel unten rechts. (x, y) = Mitte; gibt die Stielspitze für den Modell-Faden zurück."""
+        coarse = s < 3.0                    # im Titel so klein, dass mehr Zellen nur Matsch ergäben
+        W, H = 9.6 * s, 7.4 * s
+        cr = self.cr
+        # Kleinhirn zuerst (liegt unter dem Großhirn)
+        cx2, cy2 = x + W * 0.66, y + H * 0.74
+        self._blob(cx2, cy2, 3.4 * s, 2.4 * s, seed + 9, rot=0.28)
+        cr.set_source_rgb(*self.rgb(fill))
+        cr.fill_preserve()
+        cr.set_line_width(1.6)
+        cr.set_source_rgb(*self.rgb(color))
+        cr.stroke()
+        cr.save()
+        self._blob(cx2, cy2, 3.4 * s, 2.4 * s, seed + 9, rot=0.28)
+        cr.clip()
+        for i in range(5):
+            t = -1 + i * 0.5
+            self.line(cx2 - 3.4 * s + 0.5 * s * t, cy2 - 0.6 * s + t * 1.0 * s,
+                      cx2 + 3.2 * s + 0.5 * s * t, cy2 - 1.6 * s + t * 1.0 * s, w=0.9, color=color, amp=0)
+        cr.restore()
+        stemx, stemy = cx2 + 0.2 * s, cy2 + 1.7 * s
+        self.line(stemx, stemy, stemx - 0.8 * s, stemy + 4.2 * s, w=2.2, color=color, amp=0)
+        # Großhirn
+        self._cerebrum(x, y, W, H)
+        cr.set_source_rgb(*self.rgb(fill))
+        cr.fill_preserve()
+        cr.set_line_width(1.9)
+        cr.set_source_rgb(*self.rgb(color))
+        cr.stroke()
+        cr.save()
+        self._cerebrum(x, y, W, H)
+        cr.clip()
+        layout = []
+        ring1 = 13 if coarse else 16
+        ring2 = 8 if coarse else 11
+        ring3 = 3 if coarse else 5
+        for k in range(ring1):
+            a = 2 * math.pi * k / ring1
+            layout.append((math.cos(a) * 0.80, math.sin(a) * 0.72, math.degrees(a) + 90))
+        for k in range(ring2):
+            a = 2 * math.pi * k / ring2 + 0.4
+            layout.append((math.cos(a) * 0.52, math.sin(a) * 0.46, math.degrees(a)))
+        for k in range(ring3):
+            a = 2 * math.pi * k / ring3 + 1.1
+            layout.append((math.cos(a) * 0.22, math.sin(a) * 0.20, math.degrees(a) + 90))
+        for i, (u, v, ang) in enumerate(layout):
+            self._wrinkle(x + u * W, y + v * H, 0.165 * W, 0.15 * H,
+                          seed=seed * 7 + i * 3, rot=math.radians(ang), n=11)
+            cr.set_source_rgb(*self.rgb(fill))
+            cr.fill_preserve()
+            cr.set_line_width(1.05)
+            cr.set_source_rgb(*self.rgb(color))
+            cr.stroke()
+        cr.restore()
+        return (stemx - 0.8 * s, stemy + 4.2 * s)
 
     def coin(self, x, y, r=7, color=INK, fill=(1.0, 0.93, 0.55)):
         self.circle(x, y, r, w=1.6, color=color, fill=fill)

@@ -22,40 +22,57 @@ def pen():
 
 
 class FontTest(unittest.TestCase):
-    def test_steel_city_comic_is_bundled_and_resolves(self):
+    def test_steel_umlaut_city_is_bundled_and_resolves(self):
         self.assertTrue(sketch.register_fonts())
-        self.assertEqual(sketch.hand_font(), "Steel City Comic")
+        self.assertEqual(sketch.hand_font(), "Steel Umlaut City")
         p = pen()
         # Wenn Cairo die Comicschrift nicht fände, fiele es auf die Grundschrift zurück → gleiche Breiten.
         self.assertNotAlmostEqual(p.text_width("hello agents", 20, hand=True, upper=False),
                                   p.text_width("hello agents", 20, hand=False, upper=False), places=1)
 
     def test_regression_comic_font_is_steel_city_comic(self):
-        """Wunsch 0.8.2b: die Comicschrift sollte Steel City Comic sein (mitgeliefert, nicht Kalam)."""
-        from pathlib import Path
-        self.assertTrue((sketch.FONT_DIR / "SteelCityComic-Regular.ttf").is_file(), "Steel-City-Datei fehlt")
-        self.assertEqual(sketch.HAND_FONT, "Steel City Comic")
-        self.assertIn("Steel City Comic", sketch._BASELINE_EM, "kein Oberlängen-Maß für die neue Schrift")
+        """Wunsch 0.8.2c: die Comicschrift ist Steel City Comic mit selbst gezeichneten Umlauten/ß."""
+        self.assertTrue((sketch.FONT_DIR / "steel-umlaut-city.regular.ttf").is_file(), "Umlaut-City-Datei fehlt")
+        self.assertEqual(sketch.HAND_FONT, "Steel Umlaut City")
+        self.assertIn("Steel Umlaut City", sketch._BASELINE_EM, "kein Oberlängen-Maß für die neue Schrift")
 
-    def test_regression_comic_font_wobbles_on_the_baseline(self):
-        """Wunsch 0.8.2b: die neue Comicschrift soll (wie die Unterzeile) leicht unruhig sitzen."""
-        p = pen()
-        p._font(26, False, True)     # Vorschub-Cache braucht eine gewählte Schrift
-        ys = [gy for _ch, _gx, gy, _rot, _adv in p._laid_out("Handschrift", 10, 100, 26, 1.0, True)]
-        self.assertGreater(max(ys) - min(ys), 1.2, "keine Grundlinien-Unruhe in der Comicschrift")
-
-    def test_regression_comic_font_falls_back_per_character(self):
-        """Regression 0.8.2b: Steel City Comic hat für Ä/Ö/Ü/ä/ö/ü/ß und ✓/↻ leere Glyphen –
-        ohne Zeichen-Fallback blieben in der deutschen Oberfläche Lücken bzw. Kästchen."""
+    def test_regression_umlauts_live_in_the_extended_font(self):
+        """Wunsch 0.8.2c: Ä/Ö/Ü/ä/ö/ü/ß sollen die erweiterte Schrift selbst zeichnen – kein Ersatz mehr."""
         self.assertTrue(sketch.register_fonts())
         p = pen()
         p._font(24, False, True)
         for ch in "ÄÖÜäöüß":
-            self.assertNotEqual(p.family_for(ch, True), sketch.HAND_FONT,
-                                f"{ch!r} würde in Steel City Comic leer bleiben")
+            self.assertEqual(p.family_for(ch, True), sketch.HAND_FONT,
+                             f"{ch!r} sollte in Steel Umlaut City liegen, nicht im Ersatz")
+        self.assertEqual(p.family_for("A", True), sketch.HAND_FONT)
+
+    def test_regression_comic_font_wobbles_on_the_baseline(self):
+        """Wunsch 0.8.2c: die Comicschrift sitzt leicht unruhig, aber ruhiger als vor 0.8.2c."""
+        p = pen()
+        p._font(26, False, True)     # Vorschub-Cache braucht eine gewählte Schrift
+        ys = [gy for _ch, _gx, gy, _rot, _adv in p._laid_out("Handschrift", 10, 100, 26, 1.0, True)]
+        spread = max(ys) - min(ys)
+        self.assertGreater(spread, 1.0, "keine Grundlinien-Unruhe in der Comicschrift")
+        self.assertLess(spread, 3.0, "Grundlinien-Wackeln ist zu stark geworden")
+
+    def test_regression_bubble_wobble_was_reduced(self):
+        """Wunsch 0.8.2c: das Grundlinien-Wackeln der Sprechblasen soll kleiner sein als vorher (±1.5)."""
+        self.assertLess(sketch.HAND_WOBBLE, 1.5)
+        self.assertLess(sketch.HAND_TILT, 0.08)
+        p = pen()
+        p._font(20, False, True)
+        long = "Kompaktierung laeuft und laeuft"
+        ys = [gy for _ch, _gx, gy, _rot, _adv in p._laid_out(long, 10, 100, 20, 1.0, True)]
+        self.assertLess(max(ys) - min(ys), 4.0, "Sprechblasen wackeln noch zu stark")
+
+    def test_regression_comic_font_falls_back_per_character(self):
+        """Regression 0.8.2b/0.8.2c: nur noch ✓/↻ brauchen den Zeichen-Fallback – Umlaute deckt der Font."""
+        self.assertTrue(sketch.register_fonts())
+        p = pen()
+        p._font(24, False, True)
         for ch in "✓↻":
             self.assertNotEqual(p.family_for(ch, True), sketch.HAND_FONT,
-                                f"{ch!r} fällt in Steel City Comic auf das Notdef-Kästchen")
+                                f"{ch!r} fällt in Steel Umlaut City auf das Notdef-Kästchen")
         self.assertEqual(p.family_for("A", True), sketch.HAND_FONT)   # Gegenprobe
 
     def test_regression_umlauts_leave_ink_on_the_page(self):
@@ -224,6 +241,21 @@ class MotionTest(unittest.TestCase):
         styles = [dance.pick("worker", i, 0) for i in range(4)]
         self.assertEqual(len(set(styles)), 4)
         self.assertNotEqual(dance.pick("worker", 0, 0), dance.pick("worker", 0, dance.DANCE_SWITCH_S))
+
+    def test_regression_travolta_pose_moves_enough(self):
+        """Regression 0.8.2c: der Disco-/Travolta-Arm bewegte sich fast nicht (nur 2,5 px Hüftschwung).
+        Jetzt muss sich der Zeigearm weit heben und die Hüfte sichtbar schwingen."""
+        from agentscope import dance
+        base, s = 300.0, 1.0
+        hips, hands = [], []
+        for i in range(80):
+            d = dance.pose("disco", i * 0.03, 100.0, base, s)
+            hips.append(d["hip"][0])
+            hands.append(min(h[1] for h in d["hands"]))     # höchste Hand
+        self.assertGreater(max(hips) - min(hips), 8.0, "Hüfte schwingt zu wenig")
+        # der Zeigearm geht deutlich über die Schulter (Hand über Kopfhöhe)
+        self.assertLess(min(hands), base - 2 * 30.0 - 20.0, "Arm hebt sich nicht über den Kopf")
+        self.assertGreater(max(hands) - min(hands), 45.0, "Armhub zu klein")
 
 
 class VarietyTest(unittest.TestCase):
@@ -685,13 +717,14 @@ class ModelThreadTest(unittest.TestCase):
                          "Faden liegt sichtbar über der Gedankenblase")
 
     def test_regression_brain_is_larger_and_returns_stem_tip(self):
-        """Regression 0.8.2a: das Gehirn war zu klein und kaum als Gehirn erkennbar."""
+        """Regression 0.8.2a/0.8.2c: das Gehirn war zu klein; der Stiel sitzt jetzt unten rechts."""
         surf, cr = self._blank(300, 120)
         p = Pen(cr)
         tip = p.brain(150, 60, 1.25)
-        self.assertAlmostEqual(tip[0], 150.0, places=1)
+        self.assertGreater(tip[0], 150.0, "Stiel sitzt nicht mehr rechts der Gehirnmitte")
+        self.assertLess(tip[0], 150.0 + 9.6 * 1.25, "Stielspitze liegt außerhalb des Gehirns")
         self.assertGreater(tip[1], 60 + 8 * 1.25, "Stielspitze fehlt")
-        self.assertGreater(self._pink(surf, (120, 30, 180, 100)), 300, "Gehirn zu klein/kaum sichtbar")
+        self.assertGreater(self._pink(surf, (110, 20, 200, 110)), 300, "Gehirn zu klein/kaum sichtbar")
 
     def test_regression_no_model_shows_no_activity(self):
         """Regression 0.8.2a: ohne Modell zeigten Hoppla-Zähler, Balken und Tacho weiter Aktivität."""
@@ -767,17 +800,24 @@ class Wunsch082bTest(unittest.TestCase):
     def _pink(self, surf, box):
         return self._count(surf, box, lambda r, g, b: r > 170 and r - g > 55 and 60 < b < r)
 
+    def _orange(self, surf, box):
+        return self._count(surf, box, lambda r, g, b: r > 150 and 60 < g < 160 and b < 90)
+
     def test_regression_brain_is_built_from_convolutions(self):
-        """Regression 0.8.2b: das alte Gehirn hatte nur vier Falten und wirkte wie ein Knäuel."""
+        """Regression 0.8.2b/0.8.2c: das alte Gehirn hatte nur vier Falten und wirkte wie ein Knäuel.
+        Muss nach 0.8.2c deutlich mehr Windungen haben (Vorlage hirn1–3) und sich ans Kleinhirn halten."""
         calls = []
-        orig = sketch.Pen._leaf
-        sketch.Pen._leaf = lambda self, p1, p2, bulge, color, w=1.35: calls.append((p1, p2))
+        orig = sketch.Pen._wrinkle
+        sketch.Pen._wrinkle = lambda self, cx, cy, rx, ry, seed, rot=0.0, n=11, irr=0.13: calls.append((cx, cy))
         try:
             p = pen()
             p.brain(200, 100, 2.3)
         finally:
-            sketch.Pen._leaf = orig
-        self.assertGreaterEqual(len(calls), 8, "zu wenige Windungen für ein erkennbares Gehirn")
+            sketch.Pen._wrinkle = orig
+        self.assertGreaterEqual(len(calls), 24, "zu wenige Windungen für ein erkennbares Gehirn")
+        src = open(sketch.__file__, encoding="utf-8").read()
+        self.assertIn("_cerebrum", src, "Großhirnkontur fehlt")
+        self.assertIn("_blob", src, "Kleinhirn fehlt")
 
     def test_regression_brain_is_larger(self):
         """Regression 0.8.2b: das Gehirn im Titel war zu klein, um als Gehirn zu lesen."""
@@ -797,15 +837,16 @@ class Wunsch082bTest(unittest.TestCase):
         self.assertLess(by, 30.0)
 
     def test_regression_model_name_is_coloured(self):
-        """Regression 0.8.2b: der Modellname im Titel war grau wie der Rest."""
+        """0.8.2c: der Modellname ist pink wie das Gehirn, wenn die Anbindung steht."""
         from agentscope import model
         a = model.demo_agents(3.0)[0]
         a.phase, a.model, a.tok_total = "streaming", "claude-opus-5-5", 12345
+        self.assertEqual(scene.model_ink(a), sketch.PINK, "verbundenes Modell nicht pink")
         surf, cr = self._blank()
         p = Pen(cr)
         scene.render_panel(p, a, 3.0, None)
         tw = p.text_width(scene.panel_title(a), 22, bold=True)
-        self.assertGreater(self._blue(surf, (int(tw) + 60, 10, 999, 42)), 25, "Modellname nicht farbig")
+        self.assertGreater(self._pink(surf, (int(tw) + 70, 10, 999, 42)), 25, "Modellname nicht farbig")
 
     def test_regression_broken_connection_is_visible(self):
         """Regression 0.8.2b: mimo war angewählt, aber pi bekam keine Verbindung – nicht erkennbar."""
@@ -819,8 +860,9 @@ class Wunsch082bTest(unittest.TestCase):
         p = Pen(cr)
         scene.render_panel(p, a, 3.0, None)
         tw = p.text_width(scene.panel_title(a), 22, bold=True)
-        # Modellname rot, Hinweis „keine Anbindung!" im Titel, roter Faden zwischen Gehirn und Figur
-        self.assertGreater(self._red(surf, (int(tw) + 55, 10, 999, 42)), 25, "Modellname nicht als Defekt markiert")
+        # Modellname orange, Hinweis „keine Anbindung!" im Titel, roter Faden zwischen Gehirn und Figur
+        self.assertEqual(scene.model_ink(a), sketch.ORANGE, "defekte Anbindung nicht orange")
+        self.assertGreater(self._orange(surf, (int(tw) + 55, 10, 999, 42)), 25, "Modellname nicht als Defekt markiert")
         self.assertGreater(self._red(surf, (int(tw) + 20, 40, int(tw) + 160, 250)), 12, "roter Defekt-Faden fehlt")
         src = open(scene.__file__, encoding="utf-8").read()
         self.assertIn("keine Anbindung!", src)
@@ -832,8 +874,17 @@ class Wunsch082bTest(unittest.TestCase):
         a = model.demo_agents(3.0)[0]
         a.model, a.tok_total, a.errors, a.turn = "claude-opus-5-5", 90000, 3, 12
         self.assertTrue(scene.has_connect(a))
+        self.assertEqual(scene.model_ink(a), sketch.PINK, "gesundes Modell nicht pink")
         surf, cr = self._blank()
         p = Pen(cr)
         scene.render_panel(p, a, 3.0, None)
         tw = p.text_width(scene.panel_title(a), 22, bold=True)
         self.assertEqual(self._red(surf, (int(tw) + 20, 40, int(tw) + 160, 250)), 0, "gesunder Faden ist rot")
+        self.assertEqual(self._orange(surf, (int(tw) + 55, 10, 999, 42)), 0, "gesunder Modellname ist orange")
+
+    def test_regression_model_without_selection_is_grey(self):
+        """0.8.2c: ohne Modell bleibt der Name grau (nicht pink/orange)."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        a.model, a.tok_total = "", 0
+        self.assertEqual(scene.model_ink(a), sketch.GRAY)
