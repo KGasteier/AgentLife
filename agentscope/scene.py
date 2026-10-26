@@ -21,7 +21,7 @@ from collections import deque
 import cairo
 
 from .model import Agent
-from .sketch import BLUE, GRAY, INK, LIGHT, PAPER, RED, Pen
+from .sketch import LEG, BLUE, GRAY, INK, LIGHT, PAPER, RED, Pen
 
 PW, PH = 1000.0, 560.0  # virtuelles Panel
 FLOOR = 376.0
@@ -156,7 +156,7 @@ def render_empty(p: Pen, W, H, t, top, bottom):
     p.figure(500, 300 + sag, 1.0, la=(150, 200), ra=(-150, -200), ll=(80, 95), rl=(75, 90), lean=-80, head_dy=0)
     for i in range(3):
         k = (t * 0.5 + i / 3) % 1
-        p.text("z", 420 - k * 40 + i * 6, 250 - k * 120, 16 + k * 22, color=GRAY)
+        p.text("z", 420 - k * 40 + i * 6, 250 - k * 120, 16 + k * 22, color=GRAY, hand=True)
     p.text("No agents are running.", PW / 2, 470, 26, align="center", bold=True)
     p.text("Start pi and come back – this panel will fill up.", PW / 2, 506, 17, align="center", color=GRAY)
     cr.restore()
@@ -197,10 +197,56 @@ def tool_kind(name: str) -> str:
     return "other"
 
 
+# Möbelmaße (virtuelle Einheiten). Abgeleitet aus der Figur: Unterschenkel = LEG, also sitzt die
+# Hüfte eine Unterschenkellänge über dem Boden; der Tisch steht knapp unter Schulterhöhe.
+SEAT_H = LEG + 2                 # Sitzfläche über dem Boden
+DESK_H = 62                      # Tischplatte über dem Boden
+ACTOR_X = 190.0                  # Hüfte der sitzenden Figur
+
+
+def seated(p: Pen, hip, *, hands=(None, None), lean=10.0, look=0.0, eyes=None, la=(-60, -40), ra=(-60, -40), color=INK):
+    """Figur sitzt auf dem Stuhl, schaut nach rechts zum Tisch: Oberschenkel waagerecht, Füße am Boden."""
+    hx, hy = hip
+    feet = ((hx + LEG + 3, FLOOR), (hx + LEG - 5, FLOOR))
+    return p.figure(hx, hy, la=la, ra=ra, lean=lean, look=look, flip=True, hands=hands, feet=feet, eyes=eyes, color=color)
+
+
+def seated_at(hip, lean=10.0, look=0.0):
+    return Pen.anchors(*hip, lean=lean, flip=True, look=look)
+
+
+def standing_at(x, lift=0.0, flip=False, lean=0.0):
+    return Pen.anchors(x, FLOOR - lift - 2 * LEG + 0.5, lean=lean, flip=flip)
+
+
+def standing(p: Pen, x, *, lift=0.0, flip=False, **kw):
+    """Figur steht (Füße am Boden, bei lift>0 in der Luft). Hüfte liegt genau eine Beinlänge über den Füßen."""
+    foot_y = FLOOR - lift
+    hy = foot_y - 2 * LEG + 0.5
+    feet = ((x - 9, foot_y), (x + 9, foot_y))
+    return p.figure(x, hy, flip=flip, feet=feet, **kw)
+
+
+def think_at(p: Pen, head, text, *, w=330, h=170, size=19, max_lines=3):
+    """Gedankenblase über/links vom Kopf, vollständig im Bereich der Figur (x 18…440, y 46…)."""
+    cx = min(max(head[0] + 10, 18 + w / 2), 440 - w / 2)
+    cy = max(46 + h / 2, head[1] - 40 - h / 2)
+    return p.think(text, cx, cy, w, h, (head[0] - 4, head[1] - 22), size=size, max_lines=max_lines)
+
+
+def say_at(p: Pen, head, text, *, w=260, h=80, size=19, color=INK, bold=False, dx=40):
+    cx = min(max(head[0] + dx, 18 + w / 2), 440 - w / 2)
+    cy = max(46 + h / 2, head[1] - 60 - h / 2)
+    return p.say(text, cx, cy, w, h, (head[0] + 4, head[1] - 20), size=size, color=color, bold=bold)
+
+
 def draw_actor(p: Pen, a: Agent, t: float):
-    cx, floor = 180.0, FLOOR
-    desk_y = floor - 80
-    hip = (cx, floor - 92)
+    cx, floor = ACTOR_X, FLOOR
+    desk_y = floor - DESK_H
+    seat_y = floor - SEAT_H
+    hip = (cx, seat_y - 3)                       # Gesäß liegt auf der Sitzfläche
+    lap_x = cx + 70                              # Laptop (Mitte der Unterkante)
+    keys = (lap_x - 22, desk_y - 3)              # Tastatur vorne auf dem Laptop
     ph = a.phase
     tool = a.tools[0] if a.tools else None
     kind = tool_kind(tool["name"]) if tool else None
@@ -208,80 +254,78 @@ def draw_actor(p: Pen, a: Agent, t: float):
         ph = "thinking"
 
     if ph != "retrying":
-        p.desk(cx + 30, desk_y, 210, floor)
-        p.chair(cx - 4, floor - 55, floor)
+        p.desk(cx + 28, desk_y, 220, floor)
+        p.chair(cx - 6, seat_y, floor, facing=1)
     p.line(20, floor, 440, floor, w=1.6, color=GRAY)
 
     sw = math.sin(t * 7)
+    glow = ph in ("thinking", "streaming", "tool")
+    if ph not in ("retrying",):
+        p.laptop(lap_x, desk_y, 1.0, glow=glow)
+
     if ph == "idle":
-        p.laptop(cx + 140, desk_y, 1.0)
-        p.figure(*hip, la=(25, 70), ra=(40, 85), ll=(-80, 0), rl=(-75, 5), lean=-25, flip=True)
+        # zurückgelehnt, Hände im Schoß, Kopf zur Seite gekippt
+        h = seated(p, hip, lean=-14, look=-25, hands=((cx + 22, hip[1] - 6), (cx + 28, hip[1] - 4)))
         for i in range(3):
             k = (t * 0.45 + i / 3) % 1
-            p.text("z", cx - 40 - k * 30, floor - 190 - k * 110, 14 + k * 20, color=GRAY)
-        caption(p, "waiting for your next prompt", cx + 40)
+            p.text("z", h["head"][0] - 20 - k * 30, h["head"][1] - 30 - k * 110, 16 + k * 22, color=GRAY, hand=True)
+        caption(p, "waiting for your next prompt", cx + 60)
     elif ph == "thinking":
-        p.laptop(cx + 140, desk_y, 1.0, glow=True)
-        h = p.figure(*hip, la=(-160, -200), ra=(-120, -60), ll=(-80, 0), rl=(-75, 5), lean=-6, flip=True)
-        bw = 240
-        p.bubble(cx - 120, 60, bw, 110, (h["head"][0] - 10, h["head"][1] - 18), kind="thought")
+        # zurückgelehnt, Hand am Kinn
+        hd = seated_at(hip, lean=-6)["head"]
+        h = seated(p, hip, lean=-6, hands=((hd[0] + 9, hd[1] + 15), (cx + 26, hip[1] - 5)))
         words = (a.prompt or "hmm…").split()
-        k = int(t * 1.3) % max(1, len(words))
-        frag = " ".join(words[k:k + 6]) or "…"
-        p.lines(frag, cx - 100, 105, 15, bw - 50, max_lines=2)
-        dots = "." * (1 + int(t * 2) % 3)
-        p.text(dots, cx + 90, 150, 22)
+        k = int(t * 0.5) * 7 % max(1, len(words))
+        frag = " ".join(words[k:k + 9]) or "…"
+        think_at(p, h["head"], frag + " " + "." * (1 + int(t * 2) % 3))
+        caption(p, "thinking it over", cx + 60)
     elif ph == "streaming":
-        p.laptop(cx + 140, desk_y, 1.0, glow=True)
         k = 1 + min(3.0, a.rate / 25)
-        p.figure(*hip, la=(-85 + 18 * math.sin(t * 9 * k), -95), ra=(-75 + 18 * math.sin(t * 9 * k + 2), -90), ll=(-80, 0), rl=(-75, 5), lean=-10, flip=True)
-        caption(p, "streaming tokens", cx + 40)
+        tap = (2.5 * math.sin(t * 9 * k), 2.5 * math.sin(t * 9 * k + 2))
+        seated(p, hip, lean=12, hands=((keys[0], keys[1] - 2 - abs(tap[0])), (keys[0] + 12, keys[1] - 2 - abs(tap[1]))))
+        caption(p, "streaming tokens", cx + 60)
     elif ph == "tool":
-        p.laptop(cx + 140, desk_y, 1.0, glow=True)
-        draw_tool_pose(p, kind, tool, hip, cx, desk_y, floor, t)
-        caption(p, f"{tool['name']}: {tool['label']}", cx + 40)
+        draw_tool_pose(p, kind, tool, hip, cx, desk_y, floor, t, keys)
+        caption(p, f"{tool['name']}: {tool['label']}", cx + 60)
         if len(a.tools) > 1:
             p.text(f"+{len(a.tools) - 1} more tools running", cx + 300, 80, 13, color=GRAY, align="center")
     elif ph == "compacting":
-        p.laptop(cx + 140, desk_y, 1.0)
-        # Figur zeigt aufgeregt auf das Glas
-        p.figure(*hip, la=(-115, -120), ra=(-60, -50), ll=(-80, 0), rl=(-75, 5), lean=-15 + 5 * sw, flip=True)
-        p.bubble(cx - 40, 70, 220, 64, (cx + 20, 150))
-        p.text("hold on, packing…", cx + 70, 110, 17, align="center")
-        caption(p, "summarizing old context", cx + 40)
+        # zeigt aufgeregt aufs Glas (rechts oben)
+        shx, shy = seated_at(hip, lean=4 + 3 * sw)["sh"]
+        h = seated(p, hip, lean=4 + 3 * sw, hands=((shx + 46, shy - 14 + 3 * sw), (cx + 26, hip[1] - 5)))
+        say_at(p, h["head"], "hold on, packing…", dx=60)
+        caption(p, "summarizing old context", cx + 60)
     elif ph == "retrying":
-        # Figur klopft an die Tür "API"
-        dx = 300
-        p.rect(dx, floor - 190, 80, 190, lw=2.6, fill=PAPER)
+        # steht an der Tür "API" und klopft
+        dx = 320
+        p.rect(dx, floor - 190, 84, 190, lw=2.6, fill=PAPER)
         p.circle(dx + 14, floor - 95, 4, w=2)
-        p.text("API", dx + 40, floor - 160, 20, align="center", bold=True)
+        p.text("API", dx + 42, floor - 158, 22, align="center", bold=True)
         knock = abs(math.sin(t * 6))
-        p.figure(dx - 70, floor - 96, ra=(-110 + 30 * knock, -150), la=(-30, -10), ll=(14, 0), rl=(-14, 0), lean=4)
+        fx = dx - 50
+        shx, shy = standing_at(fx, flip=True)["sh"]
+        h = standing(p, fx, flip=True, hands=((dx - 2 - 10 * (1 - knock), shy - 6), (fx + 4, shy + 40)))
         if knock > 0.85:
-            p.text("knock", dx - 10, floor - 175, 15, color=GRAY)
+            p.text("knock", dx - 14, floor - 205, 16, color=GRAY, hand=True)
         r = a.retry or {}
-        p.bubble(40, 70, 220, 64, (dx - 80, floor - 170))
-        p.text(f"try {r.get('attempt', '?')} of {r.get('max', '?')}…", 150, 110, 17, align="center")
+        say_at(p, h["head"], f"try {r.get('attempt', '?')} of {r.get('max', '?')}…", dx=-120, w=220)
         caption(p, r.get("error") or "provider said no", 220)
     elif ph == "error":
-        p.laptop(cx + 140, desk_y, 1.0)
-        p.flame(cx + 145, desk_y - 40, t)
-        p.smoke(cx + 150, desk_y - 70, t)
-        jump = abs(math.sin(t * 5)) * 8
-        p.figure(hip[0] - 40, hip[1] - jump, la=(160 + 15 * sw, 200), ra=(-160 - 15 * sw, -200), ll=(14, 0), rl=(-14, 0), eyes="dots")
-        p.bubble(cx - 150, 60, 150, 56, (cx - 50, 140))
-        p.text("aaaaa!", cx - 75, 96, 20, align="center", bold=True, color=RED)
-        caption(p, a.last_error or "error", cx + 40, color=RED)
+        p.flame(lap_x + 8, desk_y - 30, t)
+        p.smoke(lap_x + 12, desk_y - 60, t)
+        jump = abs(math.sin(t * 5)) * 12
+        h = standing(p, cx - 60, lift=jump, flip=False, la=(160 + 15 * sw, 200), ra=(-160 - 15 * sw, -200), eyes="dots")
+        say_at(p, h["head"], "AAAAA!", w=170, h=70, size=24, color=RED, bold=True, dx=-10)
+        caption(p, a.last_error or "error", cx + 60, color=RED)
     else:
-        p.laptop(cx + 140, desk_y, 1.0)
-        p.figure(*hip, flip=True)
+        seated(p, hip, lean=4, hands=((cx + 24, hip[1] - 6), (cx + 30, hip[1] - 4)))
 
     # Token-Münzen fliegen vom Laptop zum Tacho
     if a.rate > 0 and ph in ("streaming", "tool", "thinking"):
         n = int(min(10, 1 + a.rate / 10))
         for i in range(n):
             k = (t * (0.35 + a.rate / 300) + i / n) % 1
-            x0, y0 = cx + 150, desk_y - 40
+            x0, y0 = lap_x + 10, desk_y - 30
             x1, y1 = 690, 200
             x = x0 + (x1 - x0) * k
             y = y0 + (y1 - y0) * k - math.sin(k * math.pi) * 120
@@ -292,33 +336,52 @@ def caption(p: Pen, text: str, x: float, color=INK):
     p.text(text, x, FLOOR + 20, 14, align="center", color=color, maxw=400)
 
 
-def draw_tool_pose(p: Pen, kind, tool, hip, cx, desk_y, floor, t):
+def draw_tool_pose(p: Pen, kind, tool, hip, cx, desk_y, floor, t, keys):
     sw = math.sin(t * 6)
     if kind == "bash":
-        # Hammer auf eine Kiste mit dem Befehl
-        bx = cx - 150
-        p.rect(bx, floor - 70, 90, 70, lw=2.4, fill=PAPER)
-        p.text(">_", bx + 45, floor - 28, 22, align="center", bold=True)
-        ang = -60 + 70 * (0.5 + 0.5 * sw)
-        h = p.figure(hip[0] - 20, hip[1], ra=(ang * 0.6 - 90, ang - 90), la=(-50, -20), ll=(-80, 0), rl=(-75, 5), lean=-15, flip=False)
-        p.hammer(h["hr"][0], h["hr"][1], -ang - 30)
-        if sw > 0.8:
-            p.text("bonk!", bx + 40, floor - 95, 15, align="center", color=GRAY)
+        # aufgestanden, steht zwischen Kiste ">_" und Stuhl, haut mit dem Hammer auf die Kiste
+        bx, bw_, bh = 22, 70, 56
+        p.rect(bx, floor - bh, bw_, bh, lw=2.4, fill=PAPER)
+        p.text(">_", bx + bw_ / 2, floor - 20, 22, align="center", bold=True, hand=False)
+        fx = bx + bw_ + 40
+        shx, shy = standing_at(fx, flip=False, lean=4)["sh"]
+        target = (bx + bw_ * 0.45, floor - bh - 3)          # Hammerkopf trifft hier
+        th_hit = math.atan2(target[0] - shx, target[1] - shy)
+        th_up = math.radians(-175)                          # ausgeholt: über dem Kopf (Bogen läuft vorn/links)
+        swing = (0.5 + 0.5 * sw) ** 1.6                     # schnell runter, langsam hoch
+        th = th_hit + (th_up - th_hit) * swing
+        # Arm + Stiel (34) reichen genau bis zur Kiste
+        reach = min(44.0, math.hypot(target[0] - shx, target[1] - shy) - 34)
+        hand = (shx + reach * math.sin(th), shy + reach * math.cos(th))
+        h = standing(p, fx, flip=False, lean=4 + 6 * (1 - swing), hands=((fx + 8, shy + 42), hand))
+        p.hammer(h["hr"][0], h["hr"][1], 180 - math.degrees(th))
+        if swing < 0.08:
+            p.text("bonk!", bx + bw_ / 2, floor - bh - 22, 17, align="center", color=GRAY, hand=True)
     elif kind == "read":
-        h = p.figure(*hip, la=(-140, -170), ra=(-140, -100), ll=(-80, 0), rl=(-75, 5), lean=-8, flip=True)
-        p.book(h["hl"][0] - 6, h["hl"][1] - 4, t)
+        # zurückgelehnt, Buch mit beiden Händen vor dem Gesicht
+        hd = seated_at(hip, lean=-4)["head"]
+        bkx, bky = hd[0] + 34, hd[1] + 22
+        seated(p, hip, lean=-4, hands=((bkx - 6, bky + 6), (bkx + 4, bky + 8)))
+        p.book(bkx, bky - 8, t)
     elif kind == "write":
-        h = p.figure(*hip, la=(-90, -100), ra=(-70 + 10 * sw, -95), ll=(-80, 0), rl=(-75, 5), lean=-18, flip=True)
-        p.rect(cx + 40, desk_y - 6, 60, 6, lw=1.6, fill=PAPER)
-        p.pencil(h["hr"][0] + 4, h["hr"][1] - 10, 150 + 10 * sw)
+        # schreibt auf ein Blatt neben dem Laptop
+        paper_x = cx + 34
+        p.rect(paper_x, desk_y - 4, 34, 4, lw=1.6, fill=PAPER)
+        pen_at = (paper_x + 10 + 10 * (0.5 + 0.5 * sw), desk_y - 6)
+        h = seated(p, hip, lean=18, hands=((pen_at[0] - 6, desk_y - 4), pen_at))
+        p.pencil(h["hr"][0] + 2, h["hr"][1] - 14, 160 + 10 * sw)
         for i in range(3):
-            p.line(cx + 44, desk_y - 30 - i * 8, cx + 44 + 30 + 10 * math.sin(t + i), desk_y - 30 - i * 8, w=1, color=GRAY)
+            p.line(paper_x + 2, desk_y - 30 - i * 8, paper_x + 22 + 8 * math.sin(t + i), desk_y - 30 - i * 8, w=1, color=GRAY)
     elif kind == "subagent":
-        h = p.figure(hip[0] - 10, hip[1], la=(-140, -110), ra=(-30, -20), ll=(-80, 0), rl=(-75, 5), lean=-10, flip=True)
-        p.megaphone(h["hl"][0], h["hl"][1] - 4, t)
-        p.text("go, minions!", h["hl"][0] + 40, h["hl"][1] - 40, 15, color=GRAY)
+        # ruft mit dem Megafon nach rechts unten zu den Minions
+        shx, shy = seated_at(hip, lean=2)["sh"]
+        h = seated(p, hip, lean=2, hands=((shx + 30, shy + 2), (shx + 22, shy + 14)))
+        p.megaphone(h["hl"][0], h["hl"][1] - 2, t)
+        say_at(p, h["head"], "go, minions!", w=200, h=64, dx=70)
     else:
-        h = p.figure(*hip, la=(-130, -150), ra=(-60, -40), ll=(-80, 0), rl=(-75, 5), lean=-12 + 4 * sw, flip=True)
+        # beugt sich mit der Lupe über den Laptop
+        shx, shy = seated_at(hip, lean=22 + 4 * sw)["sh"]
+        h = seated(p, hip, lean=22 + 4 * sw, hands=((shx + 30, shy + 6), keys))
         p.magnifier(h["hl"][0], h["hl"][1])
 
 
@@ -501,7 +564,7 @@ def draw_minions(p: Pen, run: dict, t: float, x, y, w, h):
     for i, sa in enumerate(agents[:n]):
         cx = x + slot * i + slot / 2
         base = y + h - 22
-        hip = (cx - 20, base - 48 * s * 1.0 - 4)
+        hip = (cx - 20, base - 2 * LEG * s)        # Füße genau auf der Grundlinie
         st = sa.get("status")
         if st == "done":
             p.figure(*hip, s=s, la=(30, 10), ra=(-160, -200), ll=(20, 0), rl=(-20, 0))

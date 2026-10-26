@@ -7,10 +7,13 @@ flimmern; `boil` wechselt langsam und erzeugt den typischen "lebendigen" Strich.
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
 import math
 import random
 import subprocess
 from functools import lru_cache
+from pathlib import Path
 
 import cairo
 
@@ -22,6 +25,38 @@ LIGHT = (0.86, 0.86, 0.86)
 PAPER = (1.0, 1.0, 1.0)
 
 FONT_CANDIDATES = ["xkcd Script", "xkcd", "Humor Sans", "Comic Neue", "URW Gothic"]
+HAND_FONT = "Kalam"                     # Comic-Handschrift für Überschriften und Blasen (OFL, agentscope/fonts)
+FONT_DIR = Path(__file__).resolve().parent / "fonts"
+
+
+@lru_cache(maxsize=1)
+def register_fonts() -> bool:
+    """Mitgelieferte Schriften (Kalam) für diesen Prozess bei fontconfig anmelden.
+
+    Muss vor der ersten Schriftauswahl laufen; keine Installation ins System nötig."""
+    try:
+        fc = ctypes.CDLL(ctypes.util.find_library("fontconfig") or "libfontconfig.so.1")
+        fc.FcConfigAppFontAddFile.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        ok = False
+        for f in sorted(FONT_DIR.glob("*.ttf")):
+            ok = bool(fc.FcConfigAppFontAddFile(None, str(f).encode())) or ok
+        return ok
+    except Exception:
+        return False
+
+
+@lru_cache(maxsize=1)
+def hand_font() -> str:
+    """Kalam, falls registrierbar/installiert, sonst die Grundschrift."""
+    register_fonts()
+    try:
+        fams = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True, timeout=5).stdout
+    except Exception:
+        fams = ""
+    if register_fonts() or HAND_FONT.lower() in fams.lower():
+        return HAND_FONT
+    return pick_font()
+
 
 
 @lru_cache(maxsize=1)
@@ -39,6 +74,9 @@ def pick_font() -> str:
 
 
 _ADV: dict = {}
+LEG = 30.0   # Ober-/Unterschenkel; Rumpf (Hüfte–Hals) = 48
+ARM = 24.0   # Ober-/Unterarm
+CLOUD_RB = 24.0  # größter Bogenradius der Gedankenwolke (inkl. Wackeln ≈ +5 %)
 
 
 def _seed(*k) -> int:
@@ -50,6 +88,7 @@ class Pen:
         self.cr = cr
         self.boil = boil
         self.font = font or pick_font()
+        self.hand = hand_font() if font is None else font
         self._cache: dict = {}
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
@@ -176,10 +215,11 @@ class Pen:
         cr.restore()
 
     # ------------------------------------------------------------------ Schrift
-    def _font(self, size, bold=False):
-        self.cr.select_font_face(self.font, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
+    def _font(self, size, bold=False, hand=False):
+        fam = self.hand if hand else self.font
+        self.cr.select_font_face(fam, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
         self.cr.set_font_size(size)
-        self._fkey = (round(size, 2), bold)
+        self._fkey = (fam, round(size, 2), bold)
 
     def _adv(self, ch):
         """Vorschub eines Zeichens; Cache über alle Frames (Schrift ändert sich nicht)."""
@@ -192,27 +232,32 @@ class Pen:
             _ADV[k] = v
         return v
 
-    def text_width(self, s, size, bold=False, upper=True):
+    def text_width(self, s, size, bold=False, upper=True, hand=None):
         s = s.upper() if upper else s
-        self._font(size, bold)
+        self._font(size, bold, bold if hand is None else hand)
         return sum(self._adv(ch) for ch in s)
 
-    def fit(self, s, size, maxw, bold=False, upper=True):
+    def fit(self, s, size, maxw, bold=False, upper=True, hand=None):
         """Kürzt s mit … auf maximale Breite."""
-        if self.text_width(s, size, bold, upper) <= maxw:
+        if self.text_width(s, size, bold, upper, hand) <= maxw:
             return s
-        while s and self.text_width(s + "…", size, bold, upper) > maxw:
+        while s and self.text_width(s + "…", size, bold, upper, hand) > maxw:
             s = s[:-1]
-        return s + "…"
+        return s.rstrip() + "…"
 
-    def text(self, s, x, y, size=18, color=INK, align="left", bold=False, upper=True, jitter=1.0, maxw=None):
-        """Handschriftartige Zeile: Großbuchstaben, jedes Zeichen leicht versetzt/gedreht."""
+    def text(self, s, x, y, size=18, color=INK, align="left", bold=False, upper=True, jitter=1.0, maxw=None, hand=None):
+        """Handschriftartige Zeile, jedes Zeichen leicht versetzt/gedreht.
+
+        hand=None: fette Texte (Überschriften, Ausrufe) in der Comic-Handschrift, Rest in der Grundschrift."""
         s = str(s)
+        hand = bold if hand is None else hand
+        if hand:
+            jitter *= 0.45                  # die Handschrift wackelt schon selbst
         if maxw:
-            s = self.fit(s, size, maxw, bold, upper)
+            s = self.fit(s, size, maxw, bold, upper, hand)
         s = s.upper() if upper else s
         cr = self.cr
-        self._font(size, bold)
+        self._font(size, bold, hand)
         width = sum(self._adv(ch) for ch in s)
         if align == "center":
             x -= width / 2
@@ -232,6 +277,124 @@ class Pen:
                 cr.restore()
             cx += adv
         return width
+
+    def wrap(self, text, size, maxw, bold=False, upper=True, hand=None) -> list[str]:
+        """Zeilenumbruch an Wortgrenzen; überlange Wörter werden gekürzt."""
+        rows, cur = [], ""
+        for wd in str(text).split():
+            cand = (cur + " " + wd).strip()
+            if self.text_width(cand, size, bold, upper, hand) <= maxw or not cur:
+                cur = cand
+            else:
+                rows.append(cur)
+                cur = wd
+        if cur:
+            rows.append(cur)
+        return [self.fit(r, size, maxw, bold, upper, hand) for r in rows]
+
+    def text_block(self, text, maxw, maxh, size, min_size=11, max_lines=3, lh=1.2, bold=False, upper=False, hand=True):
+        """Passt Text in einen Kasten: erst umbrechen, dann verkleinern, zuletzt mit … kürzen.
+
+        Gibt (size, rows, breite, höhe) zurück; höhe = Zeilen * size * lh."""
+        sz = size
+        while True:
+            rows = self.wrap(text, sz, maxw, bold, upper, hand)
+            if (len(rows) <= max_lines and len(rows) * sz * lh <= maxh) or sz <= min_size:
+                break
+            sz -= 1
+        fit_lines = max(1, min(max_lines, int(maxh // (sz * lh))))
+        if len(rows) > fit_lines:
+            rows = rows[:fit_lines]
+            rows[-1] = self.fit(rows[-1] + " …", sz, maxw, bold, upper, hand)
+        bw = max((self.text_width(r, sz, bold, upper, hand) for r in rows), default=0)
+        return sz, rows, bw, len(rows) * sz * lh
+
+    def draw_block(self, block, cx, cy, color=INK, bold=False, upper=False, hand=True, lh=1.2):
+        """Zeichnet text_block()-Ergebnis zentriert um (cx, cy)."""
+        sz, rows, _bw, bh = block
+        y0 = cy - bh / 2 + sz * 0.78       # Grundlinie der ersten Zeile (Kalam: Oberlänge ≈ 0,78 em)
+        for i, row in enumerate(rows):
+            self.text(row, cx, y0 + i * sz * lh, sz, color=color, align="center", bold=bold, upper=upper, hand=hand)
+
+    def _circle_path(self, cx, cy, r):
+        rr = random.Random(_seed(round(cx), round(cy), round(r), self.boil))
+        a0, ph = rr.uniform(0, 6.28), rr.uniform(0, 6.28)
+        n = max(12, int(r * 1.2))
+        for i in range(n + 1):
+            a = a0 + 2 * math.pi * i / n
+            k = 1 + 0.045 * math.sin(2 * a + ph)
+            (self.cr.move_to if i == 0 else self.cr.line_to)(cx + r * k * math.cos(a), cy + r * k * math.sin(a))
+        self.cr.close_path()
+
+    def cloud(self, cx, cy, a, b, color=INK, w=2.0):
+        """Gedankenwolke: Bögen sitzen AUSSERHALB der Ellipse (a, b), das Innere bleibt frei für Text."""
+        per = math.pi * (3 * (a + b) - math.sqrt((3 * a + b) * (a + 3 * b)))
+        n = max(8, round(per / 30))
+        d = per / n
+        rb = min(CLOUD_RB, d * 0.72)        # > d/2: Nachbarbögen schneiden sich außerhalb der Ellipse
+        pts = [(cx + a * math.cos(2 * math.pi * (i + 0.3) / n), cy + b * math.sin(2 * math.pi * (i + 0.3) / n)) for i in range(n)]
+        cr = self.cr
+        cr.set_source_rgb(*color)          # Umriss der Vereinigung: dick umranden, dann innen weiß füllen
+        for x, y in pts:
+            self._circle_path(x, y, rb)
+            cr.set_line_width(2 * w)
+            cr.stroke()
+        cr.set_source_rgb(*PAPER)
+        for x, y in pts:
+            self._circle_path(x, y, rb)
+            cr.fill()
+        cr.save()
+        cr.translate(cx, cy)
+        cr.scale(a, b)
+        cr.arc(0, 0, 1, 0, 2 * math.pi)
+        cr.restore()
+        cr.fill()
+        return rb
+
+    def think(self, text, cx, cy, maxw, maxh, tail, size=18, min_size=12, max_lines=3, color=INK, fixed=True):
+        """Gedankenblase mit Text innerhalb von maxw×maxh (Außenmaß inkl. Bögen), Schwanz zu tail.
+
+        fixed=True: Blase hat immer die volle Größe (wechselnder Text springt nicht)."""
+        # Außenmaß = Ellipse + 2·Bogenradius; Bogenradius ≤ CLOUD_RB (siehe cloud())
+        A, B = maxw / 2 - CLOUD_RB, maxh / 2 - CLOUD_RB
+        inner_w, inner_h = A * 2 * 0.74, B * 2 * 0.68   # sicher im Inneren der Ellipse
+        block = self.text_block(text, inner_w, inner_h, size, min_size, max_lines)
+        if fixed:
+            a, b = A, B
+        else:
+            a = max(A * 0.55, min(A, block[2] / 0.74 / 2 + 6))
+            b = max(B * 0.55, min(B, block[3] / 0.68 / 2 + 6))
+        rb = self.cloud(cx, cy, a, b, color=color)
+        # Schwanz: kleiner werdende Kreise von der Wolke zum Kopf
+        tx, ty = tail
+        ang = math.atan2(ty - cy, tx - cx)
+        sx, sy = cx + (a + rb * 0.8) * math.cos(ang), cy + (b + rb * 0.8) * math.sin(ang)
+        for i, r in enumerate((7, 5, 3.4)):
+            k = (i + 0.7) / 3.4
+            self.circle(sx + (tx - sx) * k, sy + (ty - sy) * k, r, fill=PAPER, w=1.8, color=color)
+        self.draw_block(block, cx, cy, color=color)
+        return {"block": block, "cx": cx, "cy": cy, "a": a, "b": b, "rb": rb}
+
+    def say(self, text, cx, cy, maxw, maxh, tail, size=18, min_size=12, max_lines=2, color=INK, bold=False, upper=False):
+        """Sprechblase, an den Text angepasst (höchstens maxw×maxh), Spitze zeigt auf tail."""
+        pad_x, pad_y = 16, 10
+        block = self.text_block(text, maxw - 2 * pad_x, maxh - 2 * pad_y, size, min_size, max_lines, bold=bold, upper=upper)
+        w = max(70, block[2] + 2 * pad_x)
+        h = block[3] + 2 * pad_y
+        x, y = cx - w / 2, cy - h / 2
+        r = 12
+        self.poly([(x + r, y), (x + w - r, y), (x + w, y + r), (x + w, y + h - r), (x + w - r, y + h), (x + r, y + h), (x, y + h - r), (x, y + r)],
+                  closed=True, fill=PAPER, color=color, w=2)
+        # Spitze an der Unterkante, Richtung tail
+        bx = min(max(tail[0] - 9, x + r + 2), x + w - r - 20)
+        self.poly([(bx, y + h - 1), tail, (bx + 18, y + h - 1)], w=2, color=color)
+        self.cr.move_to(bx + 2, y + h - 1.5)
+        self.cr.line_to(bx + 16, y + h - 1.5)
+        self.cr.set_source_rgb(*PAPER)
+        self.cr.set_line_width(3)
+        self.cr.stroke()
+        self.draw_block(block, cx, cy, color=color, bold=bold, upper=upper)
+        return (x, y, w, h)
 
     def lines(self, text, x, y, size, maxw, max_lines=3, lh=1.25, **kw):
         """Einfacher Zeilenumbruch; gibt Anzahl gezeichneter Zeilen zurück."""
@@ -259,29 +422,71 @@ class Pen:
         a = math.radians(ang_deg)
         return (p[0] + L * math.sin(a), p[1] + L * math.cos(a))
 
-    def figure(self, x, y, s=1.0, la=(20, 10), ra=(-20, -10), ll=(12, 0), rl=(-12, 0), lean=0.0,
-               head_dy=0.0, color=INK, w=2.4, eyes=None, flip=False):
-        """Strichmännchen. (x, y) = Hüfte. Winkel in Grad, 0 = nach unten, positiv = nach rechts.
-        la/ra = (Oberarm, Unterarm), ll/rl = (Oberschenkel, Unterschenkel). Gibt Hände/Kopf zurück."""
+    @staticmethod
+    def ik(root, target, L, bend):
+        """Zwei gleich lange Glieder von root nach target. bend: Richtungsvektor, in den das Gelenk zeigt.
+
+        Gibt absolute Winkel (oben, unten) in der Figur-Konvention zurück (0 = unten, + = rechts)."""
+        dx, dy = target[0] - root[0], target[1] - root[1]
+        d = max(1e-3, min(math.hypot(dx, dy), 2 * L * 0.999))
+        base = math.degrees(math.atan2(dx, dy))
+        alpha = math.degrees(math.acos(d / (2 * L)))
+        best = None
+        for sgn in (1, -1):
+            up, lo = base + sgn * alpha, base - sgn * alpha
+            a = math.radians(up)
+            mx, my = L * math.sin(a), L * math.cos(a)
+            # Gelenk relativ zur Verbindungslinie: Skalarprodukt mit bend
+            score = (mx - dx / 2) * bend[0] + (my - dy / 2) * bend[1]
+            if best is None or score > best[0]:
+                best = (score, up, lo)
+        return best[1], best[2]
+
+    @classmethod
+    def anchors(cls, x, y, s=1.0, lean=0.0, flip=False, look=0.0, head_dy=0.0):
+        """Schulter, Hals, Kopf einer Figur berechnen, ohne zu zeichnen (für Zielpunkte der Hände)."""
         sg = -1 if flip else 1
+        neck = cls._at((x, y), 180 + lean * sg, 48 * s)
+        head = cls._at(neck, 180 + lean * sg + look * sg, 16 * s)
+        return {"sh": cls._at((x, y), 180 + lean * sg, 40 * s), "neck": neck, "head": (head[0], head[1] + head_dy * s)}
+
+    def figure(self, x, y, s=1.0, la=(20, 10), ra=(-20, -10), ll=(12, 0), rl=(-12, 0), lean=0.0,
+               head_dy=0.0, color=INK, w=2.4, eyes=None, flip=False, hands=None, feet=None, look=0.0):
+        """Strichmännchen. (x, y) = Hüfte. Winkel in Grad, 0 = nach unten, positiv = nach rechts.
+        la/ra = (Oberarm, Unterarm), ll/rl = (Oberschenkel, Unterschenkel); flip spiegelt diese Winkel.
+
+        hands/feet = (links, rechts) absolute Zielpunkte (oder None je Glied): Gelenke per IK, Ellbogen
+        zeigen nach unten/hinten, Knie nach vorn (vorn = rechts bei flip=True, sonst links).
+        Gibt Hände, Füße, Knie, Kopf, Schulter, Hüfte zurück."""
+        sg = -1 if flip else 1
+        fwd = 1 if flip else -1             # Blickrichtung in x
         hip = (x, y)
         neck = self._at(hip, 180 + lean * sg, 48 * s)
-        head = self._at(neck, 180 + lean * sg, 16 * s)
+        head = self._at(neck, 180 + lean * sg + look * sg, 16 * s)
         head = (head[0], head[1] + head_dy * s)
         sh = self._at(hip, 180 + lean * sg, 40 * s)
 
-        def limb(root, ang, L1, L2):
-            mid = self._at(root, ang[0] * sg, L1)
-            end = self._at(mid, ang[1] * sg, L2)
+        def limb(root, ang, L1, L2, target=None, bend=(0, 1)):
+            if target is not None:
+                a0, a1 = self.ik(root, target, L1, bend)
+            else:
+                a0, a1 = ang[0] * sg, ang[1] * sg
+            mid = self._at(root, a0, L1)
+            end = self._at(mid, a1, L2)
             self.poly([root, mid, end], w=w, color=color, amp=0.5)
-            return end
+            return mid, end
+
+        hands = hands or (None, None)
+        feet = feet or (None, None)
 
         self.line(*hip, *neck, w=w, color=color, amp=0.6)
         self.circle(*head, 13 * s, w=w, color=color, fill=PAPER)
-        hl = limb(sh, la, 20 * s, 20 * s)
-        hr = limb(sh, ra, 20 * s, 20 * s)
-        limb(hip, ll, 24 * s, 24 * s)
-        limb(hip, rl, 24 * s, 24 * s)
+        elbow = (-fwd * 0.5, 1)              # Ellbogen hängen nach unten, leicht nach hinten
+        knee = (fwd, -0.3)                   # Knie zeigen nach vorn/oben
+        _, hl = limb(sh, la, ARM * s, ARM * s, hands[0], elbow)
+        _, hr = limb(sh, ra, ARM * s, ARM * s, hands[1], elbow)
+        kl, fl = limb(hip, ll, LEG * s, LEG * s, feet[0], knee)
+        kr, fr = limb(hip, rl, LEG * s, LEG * s, feet[1], knee)
         if eyes == "x":
             for dx in (-5, 4):
                 ex, ey = head[0] + dx * s, head[1] - 2 * s
@@ -292,46 +497,29 @@ class Pen:
                 self.cr.arc(head[0] + dx * s * sg, head[1] - 2 * s, 1.6 * s, 0, 6.3)
                 self.cr.set_source_rgb(*color)
                 self.cr.fill()
-        return {"hl": hl, "hr": hr, "head": head, "sh": sh, "hip": hip}
+        return {"hl": hl, "hr": hr, "head": head, "sh": sh, "hip": hip, "kl": kl, "kr": kr, "fl": fl, "fr": fr}
+
+    @staticmethod
+    def leg_drop(ll, rl, s=1.0) -> float:
+        """Senkrechter Abstand Hüfte→tiefster Fuß für die Beinwinkel (unabhängig von flip)."""
+        def drop(ang):
+            return LEG * s * (math.cos(math.radians(ang[0])) + math.cos(math.radians(ang[1])))
+        return max(drop(ll), drop(rl))
 
     # ------------------------------------------------------------------ Requisiten
-    def bubble(self, x, y, w, h, tail, kind="speech", color=INK):
-        if kind == "thought":
-            cx, cy = x + w / 2, y + h / 2
-            n = 11
-            for i in range(n):
-                a = 2 * math.pi * i / n
-                self.circle(cx + (w / 2 - 6) * math.cos(a), cy + (h / 2 - 6) * math.sin(a), min(w, h) * 0.2, fill=PAPER, color=color, w=2)
-            self.rect(x + 8, y + 8, w - 16, h - 16, lw=0, color=PAPER, fill=PAPER)
-            self.cr.rectangle(x + 6, y + 6, w - 12, h - 12)
-            self.cr.set_source_rgb(*PAPER)
-            self.cr.fill()
-            tx, ty = tail
-            for i, rr in enumerate((7, 5, 3.5)):
-                k = (i + 1) / 4
-                self.circle(cx + (tx - cx) * (0.55 + k * 0.5), y + h + (ty - y - h) * k * 1.2, rr, fill=PAPER, w=1.8)
-        else:
-            r = 10
-            self.poly([(x + r, y), (x + w - r, y), (x + w, y + r), (x + w, y + h - r), (x + w - r, y + h), (x + r, y + h), (x, y + h - r), (x, y + r)],
-                      closed=True, fill=PAPER, color=color, w=2)
-            bx = min(max(tail[0], x + 25), x + w - 45)
-            self.poly([(bx, y + h - 1), tail, (bx + 22, y + h - 1)], w=2, color=color)
-            self.cr.move_to(bx + 2, y + h - 2)
-            self.cr.line_to(bx + 20, y + h - 2)
-            self.cr.set_source_rgb(*PAPER)
-            self.cr.set_line_width(3)
-            self.cr.stroke()
-
     def desk(self, x, y, w, floor):
         self.line(x, y, x + w, y, w=2.6)
         self.line(x + 10, y, x + 12, floor)
         self.line(x + w - 10, y, x + w - 12, floor)
 
-    def chair(self, x, y, floor):
-        self.line(x - 22, y, x + 22, y, w=2.4)
-        self.line(x - 20, y, x - 22, floor)
-        self.line(x + 18, y, x + 20, floor)
-        self.line(x - 22, y, x - 28, y - 55, w=2.4)
+    def chair(self, x, y, floor, facing=1, s=1.0):
+        """Seitenansicht. x = Sitzmitte, y = Sitzhöhe; facing=+1: Figur schaut nach rechts (Lehne links)."""
+        hw = 22 * s
+        self.line(x - hw, y, x + hw, y, w=2.6)
+        self.line(x - hw + 3, y, x - hw + 1, floor)
+        self.line(x + hw - 3, y, x + hw - 1, floor)
+        bx = x - facing * hw
+        self.line(bx, y, bx - facing * 7 * s, y - 50 * s, w=2.6)
 
     def laptop(self, x, y, s=1.0, glow=False):
         """x, y = Mitte der Unterkante; Bildschirm schaut nach links (zur Figur)."""

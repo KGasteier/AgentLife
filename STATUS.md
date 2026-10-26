@@ -1,10 +1,16 @@
 # STATUS
 
+## Stand 0.2.0
+- Kalam-Handschrift (mitgeliefert) für Überschriften, Blasen, Ausrufe.
+- Blasentext wird umbrochen/verkleinert/gekürzt und bleibt sicher in der Wolke (Regressionstest).
+- Figuren: realistische Proportionen, IK für Hände/Füße; sitzt auf dem Stuhl, Füße am Boden,
+  Hände auf Tastatur/Buch/Kinn; Hammer trifft die Kiste.
+
 ## Stand 0.1.0
 - pi-Erweiterung schreibt Live-Zustand (live geprüft: Tools, Tool-Fehler, Tokens, Kontext, parallele Subagents).
 - Screensaver: Panels pro Agent, alle Phasen gezeichnet (Demo + echte Daten), Vollbild per Tastenkürzel.
 - Fallback für pi-Prozesse ohne Erweiterung über Session-Logs.
-- Tests: `node --test tests/` (11), `python3 -m unittest discover -s tests` (13).
+- Tests: `node --test tests/` (11), `python3 -m unittest discover -s tests` (20 inkl. Zeichnen).
 
 ## Bekannte Grenzen
 - Laufende pi-Prozesse laden die Erweiterung erst nach Neustart / `/reload`; bis dahin Log-Fallback (ohne Live-Rate).
@@ -16,4 +22,4 @@
 ## TODO
 1. Echte Kompaktierung live testen (`/compact` in einer Test-Session) und Animation prüfen.
 2. Optional: Auslösung über hypridle als echter Idle-Screensaver.
-3. xkcd-Schrift (xkcd Script, OFL) als optionale Installation anbieten.
+3. Minions (Subagents) ebenfalls mit Posen je Werkzeug statt Einheitsfigur.

@@ -58,7 +58,9 @@ o.window("org.omarchy.agentscope", { fullscreen = true })
 ```
 
 Abhängigkeiten: python3 mit GObject (GTK 4) und pycairo – auf Omarchy vorhanden.
-Schrift: nimmt `xkcd Script`/`Humor Sans`, falls installiert, sonst `URW Gothic`.
+Schrift: Überschriften und Blasen in [Kalam](https://fonts.google.com/specimen/Kalam) (mitgeliefert unter
+`agentscope/fonts/`, SIL OFL 1.1, wird nur für den Prozess geladen). Fließtext nimmt `xkcd Script`/`Humor Sans`,
+falls installiert, sonst `URW Gothic`.
 
 ## Tests
 

@@ -9,6 +9,7 @@ Beenden: beliebige Taste, Mausklick oder deutliche Mausbewegung (wie ein Screens
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 
@@ -46,7 +47,7 @@ class Scope(Gtk.ApplicationWindow):
         keys.connect("key-pressed", self.on_key)
         self.add_controller(keys)
         click = Gtk.GestureClick()
-        click.connect("pressed", lambda *_: self.maybe_quit())
+        click.connect("pressed", lambda *_: self.maybe_quit(why="click"))
         self.add_controller(click)
         motion = Gtk.EventControllerMotion()
         motion.connect("motion", self.on_motion)
@@ -78,16 +79,18 @@ class Scope(Gtk.ApplicationWindow):
         scene.render(cr, w, h, self.agents, time.monotonic() - self.t0, self.hist)
 
     # -------------------------------------------------------------- Eingabe
-    def maybe_quit(self, force=False):
+    def maybe_quit(self, force=False, why="?"):
         if force or (not self.windowed and time.monotonic() - self.started > GRACE_S):
+            if os.environ.get("AGENTSCOPE_DEBUG"):
+                print(f"agentscope: quit ({why}) after {time.monotonic() - self.started:.1f}s", file=sys.stderr)
             self.get_application().quit()
 
     def on_key(self, _c, keyval, _code, _state):
         name = (Gtk.accelerator_name(keyval, 0) or "").lower()
         if name in ("escape", "q"):
-            self.maybe_quit(force=True)
+            self.maybe_quit(force=True, why=f"key {name}")
         else:
-            self.maybe_quit()
+            self.maybe_quit(why=f"key {name}")
         return True
 
     def on_motion(self, _c, x, y):
@@ -97,7 +100,7 @@ class Scope(Gtk.ApplicationWindow):
         if self.motion_origin is None:
             self.motion_origin = (x, y)
         elif abs(x - self.motion_origin[0]) + abs(y - self.motion_origin[1]) > MOVE_THRESHOLD:
-            self.maybe_quit()
+            self.maybe_quit(why=f"motion {self.motion_origin} -> {(round(x), round(y))}")
 
 
 def main(argv=None):
