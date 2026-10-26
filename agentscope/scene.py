@@ -23,7 +23,7 @@ import cairo
 from . import dance
 from .model import Agent
 from . import sketch
-from .sketch import LEG, BLUE, GRAY, INK, LIGHT, PAPER, RED, Pen
+from .sketch import LEG, BLUE, GRAY, INK, LIGHT, PAPER, PINK, RED, Pen
 
 PW, PH = 1000.0, 560.0  # virtuelles Panel
 FLOOR = 376.0
@@ -241,6 +241,16 @@ def render_empty(p: Pen, W, H, t, top, bottom):
 
 
 # ======================================================================== Panel
+def has_model(a: Agent) -> bool:
+    """Ist ein Modell angewählt? Fehlt es, gilt die Verbindung als getrennt (schlaffe Puppe, gerissener Faden)."""
+    return bool((getattr(a, "model", "") or "").strip())
+
+
+def brain_pos(a: Agent, title_width: float):
+    """Position des pinken Gehirns links vom Modellnamen im Titelbereich."""
+    return (title_width + 42.0, 21.0)
+
+
 def harness_ink(a: Agent):
     """Farbton für Beschriftungskasten und Titeltext je Harness (pi bleibt Tinte; die Skizzenlinien selbst bleiben schwarz)."""
     return {"pi": INK, "claude": (0.72, 0.36, 0.14), "codex": (0.13, 0.44, 0.34),
@@ -279,9 +289,15 @@ def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
         p.rect(-1, -1, tw + 36, 40, lw=2.4, color=harness_ink(a), fill=harness_tint(a))
         p.text(title, 16, 28, 22, bold=True, color=harness_ink(a))
         p.line(20, FLOOR, 440, FLOOR, w=1.6, color=GRAY)
+        # pinkes Gehirn links vom Modellnamen; der Faden zum Kopf folgt in der dynamischen Ebene
+        p.brain(*brain_pos(a, tw), 0.9)
+    p.brain_xy = brain_pos(a, tw)
     if p.dy:
         phase_txt = PHASE_WORDS.get(a.phase, a.phase)
-        p.text(f"{a.model or '?'} · Runde {a.turn} · {phase_txt}", tw + 52, 28, 15, color=GRAY, maxw=820 - tw - 52)
+        if has_model(a):
+            p.text(f"{a.model} · Runde {a.turn} · {phase_txt}", tw + 66, 28, 15, color=GRAY, maxw=820 - tw - 66)
+        else:
+            p.text("kein Modell · getrennt", tw + 66, 28, 15, color=PINK, maxw=820 - tw - 66)
         if a.source == "log":
             p.text("(aus dem Sitzungslog)" if a.harness == "pi" else f"({a.harness}-Sitzungslog)",
                    830, 28, 12, color=GRAY, align="right")
@@ -356,7 +372,57 @@ def say_at(p: Pen, head, text, *, w=260, h=80, size=19, color=INK, bold=False, d
     return p.say(text, cx, cy, w, h, (head[0] + 4, head[1] - 20), size=size, color=color, bold=bold)
 
 
+def draw_slumped(p: Pen, a: Agent, t: float, cx: float, seat_y: float, floor: float):
+    """Kein Modell angewählt: leblose Strichpuppe, versunken in den Stuhl gekippt, Arme baumeln."""
+    p.desk(cx + 28, floor - DESK_H, 220, floor)
+    p.chair(cx - 6, seat_y, floor, facing=1)
+    p.laptop(cx + 70, floor - DESK_H, 1.0, glow=False)
+    hip = (cx - 6, seat_y - 3)
+    hd = seated_at(hip, lean=-34)["head"]
+    h = p.figure(hip[0], hip[1], lean=-34, look=-46, flip=True, feet=((hip[0] + LEG + 3, floor), (hip[0] + LEG - 5, floor)),
+                 hands=((hd[0] - 10, hd[1] + 24), (hd[0] - 4, hd[1] + 30)), color=GRAY, w=2.0)
+    hx, hy = h["head"]
+    for dx in (-5, 4):                                   # geschlossene, leblose Augen
+        p.line(hx + dx - 3, hy - 2, hx + dx + 3, hy - 2, w=1.6, color=GRAY, amp=0)
+    p.line(hx + 12, hy + 4, hx + 18, hy + 16, w=1.6, color=GRAY, amp=0)   # hängender Mundwinkel
+    for i in range(3):
+        p.text("z", hx - 24 - i * 12, hy - 14 - i * 12, 11 + i * 4, color=LIGHT, hand=True)
+    caption(p, "kein Modell angewählt – Verbindung getrennt", cx + 60, color=GRAY)
+
+
+def _model_thread(p: Pen, cx: float, t: float, broken: bool = False):
+    """Ganz feiner pinker Faden vom Gehirn (Titel) zum Kopf der Hauptfigur; wackelt luftig mit.
+
+    broken=True (kein Modell): der Faden ist oben abgerissen und baumelt schlaff herab."""
+    if not p.dy or not p.heads:
+        return
+    bx, by = getattr(p, "brain_xy", (60.0, 21.0))
+    hip, head = min(p.heads, key=lambda hh: abs(hh[0][0] - cx))   # Kopf der Hauptfigur (nächste Hüfte an cx)
+    hx, hy = head
+    tx, ty = hx - 4, hy - 14                              # Kopfoberkante
+    if broken:
+        # oben abgerissen: kurzes, schlaff herabhängendes Ende direkt unter dem Gehirn
+        sway = 5.0 * math.sin(t * 1.3)
+        mid = (bx + 3 * math.sin(t * 1.1), by + 22 + 2 * math.sin(t * 0.9))
+        end = (bx + sway, by + 40 + 3 * math.sin(t * 1.7))
+        p.curve([(bx, by + 9), mid, end], w=0.7, color=PINK)
+        p.circle(end[0], end[1], 1.7, w=0.8, color=PINK, fill=PINK)
+        p.text("kein Signal", end[0] + 6, end[1] + 4, 9, color=PINK, hand=True, upper=False, jitter=0.4)
+        return
+    pts = []
+    n = 6
+    for i in range(n + 1):
+        k = i / n
+        x = bx + (tx - bx) * k
+        y = by + 9 + (ty - (by + 9)) * k
+        sag = 16 * math.sin(math.pi * k)                  # leichter Durchhang
+        wave = 6.0 * math.sin(k * 9.0 - t * 2.6) * (1 - abs(k - 0.5) * 1.1)
+        pts.append((x + wave * 0.8, y + sag + wave))
+    p.curve(pts, w=0.7, color=PINK)
+
+
 def draw_actor(p: Pen, a: Agent, t: float):
+    p.heads = []                     # nur die Figuren dieses Panels für den Modell-Faden
     cx, floor = ACTOR_X, FLOOR
     desk_y = floor - DESK_H
     seat_y = floor - SEAT_H
@@ -381,6 +447,11 @@ def draw_actor(p: Pen, a: Agent, t: float):
     if ph == "error":
         p.flame(lap_x + 8, desk_y - 30, t)
         p.smoke(lap_x + 12, desk_y - 60, t)
+
+    if not has_model(a):
+        draw_slumped(p, a, t, cx, seat_y, floor)
+        _model_thread(p, cx, t, broken=True)
+        return
 
     from . import acts
     ctx = acts.context(cx, floor, desk_y, seat_y, hip, lap_x, keys)
@@ -443,6 +514,8 @@ def draw_actor(p: Pen, a: Agent, t: float):
         caption(p, a.last_error or "Fehler", cx + 60, color=RED)
     else:
         seated(p, hip, lean=4, hands=((cx + 24, hip[1] - 6), (cx + 30, hip[1] - 4)))
+
+    _model_thread(p, cx, t)
 
     # Token-Münzen: der Laptop wirft gelbe Tokens in den Maul-Kopf; grün spuckt er sie wieder aus
     if a.rate > 0 and ph in ("streaming", "tool", "thinking"):

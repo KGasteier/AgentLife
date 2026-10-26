@@ -530,3 +530,76 @@ class Wunsch080Test(unittest.TestCase):
         import inspect
         from agentscope import app
         self.assertIn("default=8", inspect.getsource(app.main))
+
+
+class ModelThreadTest(unittest.TestCase):
+    """Wunsch 0.8.2: pinkes Gehirn im Titel, feiner Faden zum Kopf, leblose Puppe ohne Modell."""
+
+    def _blank(self, w=1000, h=560):
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, w, h)
+        cr = cairo.Context(surf)
+        cr.set_source_rgb(1, 1, 1)
+        cr.paint()
+        return surf, cr
+
+    def _pink(self, surf, box=None):
+        """Zählt rosa Pixel (R deutlich > G, B dazwischen)."""
+        surf.flush()
+        buf, st = surf.get_data(), surf.get_stride()
+        x0, y0, x1, y1 = box or (0, 0, surf.get_width(), surf.get_height())
+        n = 0
+        for y in range(y0, y1):
+            row = y * st
+            for x in range(x0, x1):
+                i = row + 4 * x
+                r, g, b = buf[i + 2], buf[i + 1], buf[i]
+                if r > 170 and r - g > 55 and 60 < b < r:
+                    n += 1
+        return n
+
+    def test_brain_sits_left_of_the_model_name(self):
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        p = Pen(cairo.Context(cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)))
+        tw = p.text_width(scene.panel_title(a), 22, bold=True)
+        bx, by = scene.brain_pos(a, tw)
+        self.assertLess(bx, tw + 66, "Gehirn sitzt rechts vom Modelltext")
+        self.assertLess(by, 30, "Gehirn sitzt nicht im Titelbereich")
+
+    def test_regression_thread_follows_the_head(self):
+        """Regression 0.8.2: ohne Faden gab es keine Verbindung zwischen Modell und Figur."""
+        from agentscope import model
+        surf, cr = self._blank()
+        p = Pen(cr)
+        a = model.demo_agents(3.0)[0]
+        a.phase, a.model = "streaming", "claude-opus-5-5"
+        scene.render_panel(p, a, 3.0, None)
+        # Faden: rosa Pixel im Band zwischen Titel (y≈21) und Figur, links der Panelmitte
+        self.assertGreater(self._pink(surf, (150, 30, 300, 300)), 20, "kein pinker Faden sichtbar")
+
+    def test_regression_no_model_shows_lifeless_puppet_and_broken_thread(self):
+        """Regression 0.8.2: ohne Modell blieb die Figur fröhlich sitzen; jetzt schlaffe Puppe, gerissener Faden."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        a.model = ""
+        self.assertFalse(scene.has_model(a))
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 3.0, None)
+        src = open(scene.__file__).read()
+        self.assertIn("draw_slumped", src)
+        self.assertIn("kein Modell · getrennt", src)
+        # gerissener Faden: rosa Pixel nur direkt unter dem Gehirn, nicht bis zur Figur
+        tw = p.text_width(scene.panel_title(a), 22, bold=True)
+        bx, by = scene.brain_pos(a, tw)
+        self.assertGreater(self._pink(surf, (int(bx) - 18, int(by) + 4, int(bx) + 18, int(by) + 70)), 5, "gerissener Faden fehlt")
+        self.assertLess(self._pink(surf, (150, 130, 440, 340)), 5, "Faden hängt trotz Trennung zur Figur")
+
+    def test_thread_survives_walking_and_jumping_poses(self):
+        from agentscope import model
+        a = model.demo_agents(14.0)[0]
+        a.phase, a.model = "error", "gpt-6.1-sol"
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 3.0, None)
+        self.assertGreater(self._pink(surf, (150, 30, 420, 340)), 20)

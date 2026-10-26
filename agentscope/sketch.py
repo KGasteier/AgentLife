@@ -23,6 +23,7 @@ BLUE = (0.16, 0.36, 0.74)
 GRAY = (0.6, 0.6, 0.6)
 LIGHT = (0.86, 0.86, 0.86)
 PAPER = (1.0, 1.0, 1.0)
+PINK = (0.85, 0.25, 0.5)   # Gehirn und Verbindungsfaden zum Modell
 
 FONT_CANDIDATES = ["xkcd Script", "xkcd", "Humor Sans", "Comic Neue", "URW Gothic"]
 HAND_FONT = "Kalam"                     # Comic-Handschrift für Überschriften und Blasen (OFL, agentscope/fonts)
@@ -95,6 +96,7 @@ class Pen:
         self.hand = hand_font() if font is None else font
         self._cache: dict = {}
         self.layer = None   # None = alles, "static" = nur Unveränderliches, "dynamic" = nur Bewegtes
+        self.heads = []         # (Hüfte, Kopf) aller gezeichneten Figuren (für den Modell-Faden)
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
 
@@ -598,6 +600,7 @@ class Pen:
                 self.cr.arc(head[0] + dx * s * sg, head[1] - 2 * s, 1.6 * s, 0, 6.3)
                 self.cr.set_source_rgb(*self.rgb(color))
                 self.cr.fill()
+        self.heads.append((hip, head))
         return {"hl": hl, "hr": hr, "head": head, "sh": sh, "hip": hip, "kl": kl, "kr": kr, "fl": fl, "fr": fr}
 
     @staticmethod
@@ -697,6 +700,18 @@ class Pen:
         self.line(x + 3.6 * s, top, x + 10 * s, top + 6 * s, w=1.6 * s, color=color, amp=0)
         if double:
             self.line(x + 3.6 * s, top + 5 * s, x + 10 * s, top + 11 * s, w=1.6 * s, color=color, amp=0)
+
+    def brain(self, x, y, s=1.0, color=PINK, fill=(1.0, 0.87, 0.93)):
+        """Kleines Cartoon-Gehirn (pink): zwei Lappen mit Windungen und Stiel. (x, y) = Mitte."""
+        r = 7.0 * s
+        self.circle(x - 4.2 * s, y - 1.0 * s, r, w=1.7, color=color, fill=fill)
+        self.circle(x + 4.2 * s, y - 1.0 * s, r, w=1.7, color=color, fill=fill)
+        for pts in (((x - 9 * s, y - 3 * s), (x - 4 * s, y - 8 * s), (x - 1 * s, y - 3 * s)),
+                    ((x + 1 * s, y - 8 * s), (x + 6 * s, y - 8 * s), (x + 9 * s, y - 3 * s)),
+                    ((x - 10 * s, y + 2 * s), (x - 4 * s, y - 1 * s), (x - 1 * s, y + 3 * s)),
+                    ((x + 2 * s, y + 3 * s), (x + 5 * s, y - 1 * s), (x + 10 * s, y + 2 * s))):
+            self.curve(list(pts), w=1.1, color=color)
+        self.line(x, y + 6 * s, x, y + 10 * s, w=1.7, color=color, amp=0)     # Stiel
 
     def coin(self, x, y, r=7, color=INK, fill=(1.0, 0.93, 0.55)):
         self.circle(x, y, r, w=1.6, color=color, fill=fill)

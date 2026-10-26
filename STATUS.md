@@ -1,5 +1,11 @@
 # STATUS
 
+## Stand 0.8.2
+- **Pinkes Gehirn im Titel:** Links vom Modellnamen sitzt ein kleines pinkes Cartoon-Gehirn (`sketch.PINK`, `Pen.brain(x, y, s)` – zwei Lappen mit Windungen und Stiel), gezeichnet in der statischen Ebene (`render_panel`), Position über `scene.brain_pos(a, title_width)`.
+- **Feiner Faden zum Kopf:** `scene._model_thread` zieht einen 0,7 px dünnen pinken Faden vom Gehirn zum Kopf der Hauptfigur. Der Kopf wird aus `Pen.heads` (Hüfte/Kopf aller gezeichneten Figuren) als der zur Sitzposition `cx` nächstgelegene gewählt – der Faden folgt also in **allen** Posen (Laufen, Springen, Tai-Chi, Karate …) und wackelt luftig (`sag` + Sinuswelle mit `t`). Dynamische Ebene, nicht gecacht.
+- **Ohne Modell getrennt:** `scene.has_model(a)` prüft `Agent.model`. Fehlt es, zeichnet `scene.draw_slumped` eine leblose Strichpuppe (grau, geschlossene Augen, hängender Mundwinkel, „z z z“), die in den Stuhl gekippt ist; der Faden ist oben abgerissen, baumelt kurz unter dem Gehirn und trägt den Hinweis „kein Signal“. Der Titeltext wird pink und lautet „kein Modell · getrennt“, die Unterzeile „kein Modell angewählt – Verbindung getrennt“.
+- Tests: `ModelThreadTest` (4, u. a. `test_regression_thread_follows_the_head`, `test_regression_no_model_shows_lifeless_puppet_and_broken_thread`); auf dem alten Stand `0479e4e` scheitern 3 davon (1 failure, 2 errors). Python 66, Node 12.
+
 ## Stand 0.8.1
 - **Sprechblasen-Vorrat** `agentscope/quips.py`: Memes im englischen Original („Live long and prosper.“, „This is fine.“, „Beam me up, Scotty!“) plus deutsche Antworten in Variation. `quips.line(key, …)` wählt deterministisch aus der Liste (Lauf-`RUN_SEED`, Agent-Schlüssel, Zeitschlitz) – nie zweimal dasselbe; neue Antworten einfach anhängen. Antworten auf Spocks Gruß enthalten „Möge die Macht mit dir sein.“ und Verwandte.
 - **Verdrahtet:** Vulkanier (Gruß/Antwort/Beamen), „This is fine“, „6-7“, „Distracted Developer“, KI-Gegner, Sith/Jedi, Zombies, Gandalf.

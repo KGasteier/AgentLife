@@ -26,10 +26,14 @@ Jeder Agent ist ein Comic-Panel. Die Beschriftung links oben nennt den **Harness
 gekürzten **Skill- bzw. Sitzungsnamen** (z. B. `pi · vaultdev`); gibt es keinen Namen, steht dort
 eine kurze Sitzungskennung. Ein dezent getönter **Titelkasten** unterscheidet die Harnessse
 (pi = grau, Claude Code = warm, Codex = grün-blau) – die **Skizzenlinien selbst bleiben schwarz**.
+Links vom Modellnamen sitzt ein kleines **pinkes Gehirn**; ein feiner pinker **Faden** führt von ihm
+zum Kopf der Figur und wackelt in jeder Pose mit. Ist **kein Modell** angewählt, ist die Verbindung
+getrennt: eine leblose Puppe hängt grau im Stuhl, der Faden baumelt abgerissen unter dem Gehirn („kein Signal“).
 
 | Bild | Bedeutung |
 |---|---|
 | Figur am Schreibtisch | Hauptagent – Pose = Phase (Denkblase mit dem Prompt, Tippen, Werkzeug, Schlafen) |
+| Pinkes Gehirn + Faden | Modell ist angewählt; der Faden verbindet Gehirn und Kopf (wackelt mit). Kein Modell = abgerissener Faden, leblose Puppe im Stuhl |
 | Sprechblasen | Memes im englischen Original („Live long and prosper.“, „This is fine.“) mit wechselnden Antworten |
 | Hammer auf `>_`-Kiste / Buch / Bleistift / Megafon / Lupe | Werkzeug `bash` / `read` / `edit`·`write` / `subagent` / sonstige |
 | Glas „Kontext“ mit Presse | Kontextfüllung; Presse drückt + „QUETSCH!“ = Kompaktierung läuft, „GEQUETSCHT!“ = gerade fertig |
