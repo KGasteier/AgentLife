@@ -66,6 +66,23 @@ class SessionTest(unittest.TestCase):
         self.assertEqual([t["name"] for t in a.tools], ["read"])  # t2 noch offen
         self.assertEqual(a.phase, "tool")
 
+    def test_regression_open_request_is_not_idle(self):
+        """Log endet mit offener Anfrage (Modell/Kompaktierung läuft, pi schreibt erst danach): nicht „wartet auf Prompt“."""
+        u = {"role": "user", "content": "los"}
+        lines = jl({"type": "session", "cwd": "/x"}, {"type": "message", "message": u})
+        for silent, want in ((5, "thinking"), (90, "thinking"), (model.BUSY_MAX_S + 5, "idle")):
+            a = model.agent_from_session_lines(lines, "k", mtime=1000, now=1000 + silent)
+            self.assertEqual(a.phase, want, silent)
+        res = {"type": "message", "message": {"role": "toolResult", "toolCallId": "t", "toolName": "bash", "content": []}}
+        a = model.agent_from_session_lines(lines + jl(res), "k", mtime=1000, now=1090)
+        self.assertEqual(a.phase, "thinking")
+
+    def test_log_idle_only_after_finished_answer(self):
+        done = {"type": "message", "message": {"role": "assistant", "stopReason": "stop", "content": [], "usage": {}}}
+        lines = jl({"type": "session", "cwd": "/x"}, {"type": "message", "message": {"role": "user", "content": "hi"}}, done)
+        self.assertEqual(model.agent_from_session_lines(lines, "k", mtime=1000, now=1090).phase, "idle")
+        self.assertEqual(model.agent_from_session_lines(lines, "k", mtime=1000, now=1010).phase, "idle")
+
     def test_regression_log_rate_moves_needle(self):
         """Realbetrieb ohne Live-Datei: Rate kam nie über 0 (Nadel stand still)."""
         from datetime import datetime, timezone
@@ -132,6 +149,28 @@ class SceneTest(unittest.TestCase):
     def test_regression_negative_rate_clamped(self):
         a = model.Agent(key="x", title="t", source="demo", rate=-5)
         self.render([a])
+
+    def test_static_layer_is_cached_and_complete(self):
+        """Statische Ebene wird einmal gerendert (nur bei Größen-/Titelwechsel neu) und deckt Rahmen + Beschriftung ab."""
+        ag = model.demo_agents(14)[:1]
+        lc = scene.StaticLayer()
+        surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 960, 600)
+        for i in range(3):
+            scene.render_cached(cairo.Context(surf), 960, 600, ag, 14 + i, scene.History(), lc)
+        self.assertEqual(lc.renders, 1)
+        scene.render_cached(cairo.Context(cairo.ImageSurface(cairo.FORMAT_ARGB32, 800, 500)), 800, 500, ag, 14, scene.History(), lc)
+        self.assertEqual(lc.renders, 2)
+        # Ebenen zusammen ≈ Vollbild: nicht-weiße Pixel im gleichen Rahmen
+        full = cairo.ImageSurface(cairo.FORMAT_ARGB32, 960, 600)
+        scene.render(cairo.Context(full), 960, 600, ag, 14, scene.History())
+        part = cairo.ImageSurface(cairo.FORMAT_ARGB32, 960, 600)
+        scene.render_cached(cairo.Context(part), 960, 600, ag, 14, scene.History(), scene.StaticLayer())
+        ink = lambda s: sum(1 for b in bytes(s.get_data())[::4] if b < 200)
+        self.assertAlmostEqual(ink(part) / ink(full), 1.0, delta=0.08)
+
+    def test_ui_is_german(self):
+        self.assertIn("wartet auf deinen nächsten Prompt", open(scene.__file__).read())
+        self.assertNotIn("waiting for your", open(scene.__file__).read())
 
     def test_layout_fits(self):
         for n in range(1, 7):

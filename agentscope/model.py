@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 
 RUNTIME_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "agentscope")
 SESSIONS_DIR = os.path.expanduser("~/.pi/agent/sessions")
+BUSY_MAX_S = 10 * 60      # Log endet mit offener Anfrage: so lange gilt der Agent als beschäftigt
 SESSION_FRESH_S = 15 * 60  # Logs, die länger ruhen, gelten als inaktiv
 RATE_WINDOW_S = 90         # Log-Fallback: Antworten der letzten 90 s mitteln
 RATE_HOLD_S = 25           # … und die Rate so lange nach der letzten Antwort noch zeigen
@@ -203,12 +204,25 @@ def log_rate(samples: list[tuple[float, float, int]], now: float, last_entry: fl
     return sum(o for _, _, o in recent) / sum(d for _, d, _ in recent)
 
 
+def log_phase(last_kind: str | None, has_tools: bool, idle_s: float) -> str:
+    """Phase aus dem Log-Ende. pi schreibt erst, wenn eine Nachricht fertig ist: ein langer Modellaufruf
+    (oder eine Kompaktierung) hinterlässt also Stille, ohne dass der Agent wartet.
+    idle gilt nur, wenn die letzte Antwort abgeschlossen ist; eine offene Anfrage bleibt BUSY_MAX_S lang aktiv."""
+    if has_tools:
+        return "tool"
+    if last_kind in ("user", "result", "tool"):
+        return "thinking" if idle_s < BUSY_MAX_S else "idle"
+    if last_kind == "compact":
+        return "thinking" if idle_s < 30 else "idle"
+    return "idle"
+
 def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: float) -> Agent | None:
     """Rekonstruiert einen ungefähren Zustand aus dem Ende eines Session-Logs."""
     a = Agent(key=key, title="", source="log", updated=mtime)
     pending: dict[str, dict] = {}
     samples: list[tuple[float, float, int]] = []
     last_entry = None
+    last_kind = None  # user | result | tool | done | compact – womit das Log zuletzt aufhört
     cwd = ""
     any_entry = False
     for ln in lines:
@@ -227,15 +241,19 @@ def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: floa
             cwd = o.get("cwd", "")
         elif t == "session_info" and o.get("name"):
             a.title = o["name"]
+        elif t == "custom_message":
+            last_kind = "user"
         elif t == "model_change":
             a.model = str(o.get("modelId", "")).split("/")[-1]
         elif t == "compaction":
             a.compact_count += 1
             a.compact_before = o.get("tokensBefore")
-            a.events.append({"kind": "compact", "text": f"context squeezed from {round((o.get('tokensBefore') or 0) / 1000)}k", "at": 0})
+            last_kind = "compact"
+            a.events.append({"kind": "compact", "text": f"Kontext gequetscht von {round((o.get('tokensBefore') or 0) / 1000)}k", "at": 0})
         elif t == "message":
             m = o.get("message") or {}
             role = m.get("role")
+            last_kind = {"user": "user", "toolResult": "result"}.get(role, last_kind)
             if role == "user":
                 c = m.get("content")
                 text = c if isinstance(c, str) else " ".join(p.get("text", "") for p in (c or []) if isinstance(p, dict))
@@ -244,6 +262,7 @@ def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: floa
                     a.events.append({"kind": "input", "text": a.prompt[:90], "at": 0})
             elif role == "assistant":
                 a.turn += 1
+                last_kind = "tool" if m.get("stopReason") == "toolUse" else "done"
                 u = m.get("usage") or {}
                 a.tok_in += u.get("input", 0) or 0
                 a.tok_out += u.get("output", 0) or 0
@@ -283,13 +302,7 @@ def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: floa
     a.tools = list(pending.values())
     a.rate = log_rate(samples, now, last_entry)
     a.rate_est = a.rate > 0
-    idle_s = now - mtime
-    if a.tools:
-        a.phase = "tool"
-    elif idle_s < 20:
-        a.phase = "thinking"
-    else:
-        a.phase = "idle"
+    a.phase = log_phase(last_kind, bool(a.tools), now - mtime)
     for i, e in enumerate(a.events):
         e["seq"] = i
     a.events = a.events[-40:]
@@ -352,9 +365,9 @@ def collect(now: float | None = None) -> list[Agent]:
 
 # --------------------------------------------------------------------- Demo
 DEMO_PROMPTS = [
-    "build an animated xkcd-style screensaver that shows what all my agents are doing",
-    "fix the flaky integration test in the hub",
-    "refactor the export pipeline and update the docs",
+    "baue einen animierten Bildschirmschoner im xkcd-Stil, der zeigt, was alle meine Agenten tun",
+    "repariere den wackligen Integrationstest im Hub",
+    "räume die Export-Pipeline auf und aktualisiere die Doku",
 ]
 
 
@@ -382,8 +395,8 @@ def demo_agents(t: float) -> list[Agent]:
     run = {"toolCallId": "demo", "mode": "parallel", "total": nrun, "done": sum(a["status"] == "done" for a in agents_sub),
            "running": sum(a["status"] == "running" for a in agents_sub), "failed": sum(a["status"] == "failed" for a in agents_sub),
            "finished": False, "agents": agents_sub}
-    ev_texts = [("input", DEMO_PROMPTS[0]), ("tool", "bash: ls ~/.pi/agent"), ("tool", "read: extensions.md"), ("subagent", "delegates 5 parallel"),
-                ("tool_error", "bash failed: no such file"), ("compact", "context squeezed from 152k"), ("tool", "edit: scene.py"), ("retry", "retry 1/3: 529 overloaded")]
+    ev_texts = [("input", DEMO_PROMPTS[0]), ("tool", "bash: ls ~/.pi/agent"), ("tool", "read: extensions.md"), ("subagent", "delegiert 5 parallel"),
+                ("tool_error", "bash-Fehler: Datei nicht gefunden"), ("compact", "Kontext gequetscht von 152k"), ("tool", "edit: scene.py"), ("retry", "Retry 1/3: 529 überlastet")]
     n_ev = 3 + int(t / 2) % len(ev_texts)
     events = [{"seq": i, "kind": k, "text": x, "at": 0} for i, (k, x) in enumerate((ev_texts * 3)[:n_ev])]
     a = Agent(

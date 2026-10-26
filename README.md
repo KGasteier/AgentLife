@@ -27,12 +27,12 @@ Jeder pi-Prozess ist ein Comic-Panel:
 |---|---|
 | Figur am Schreibtisch | Hauptagent – Pose = Phase (Denkblase mit dem Prompt, Tippen, Werkzeug, Schlafen) |
 | Hammer auf `>_`-Kiste / Buch / Bleistift / Megafon / Lupe | Werkzeug `bash` / `read` / `edit`·`write` / `subagent` / sonstige |
-| Glas „CONTEXT“ mit Presse | Kontextfüllung; Presse drückt + „SQUEEEZE!“ = Kompaktierung läuft, „SQUISH!“ = gerade fertig |
+| Glas „Kontext“ mit Presse | Kontextfüllung; Presse drückt + „QUETSCH!“ = Kompaktierung läuft, „GEQUETSCHT!“ = gerade fertig |
 | Tacho „TOKENS / SEC“ + fliegende Münzen | aktuelle Ausgaberate, darunter Gesamtverbrauch (in/out); „~N“ = aus Session-Logs geschätzt |
-| Kurve „CONTEXT OVER TIME“ | Kontextverlauf; Sägezahn mit „squish“-Marken = Kompaktierungen |
+| Kurve „Kontext im Zeitverlauf“ | Kontextverlauf; Sägezahn mit „quetsch“-Marken = Kompaktierungen |
 | Kleine Figuren unten + Balken | Subagents: tanzen = arbeiten (Disco, Gangnam, Twerk, Stepptanz, Irish, YMCA, Floss, Moonwalk) / Haken = fertig / rot umgefallen = Fehler; Balken = Fortschritt |
 | Brennender Laptop, „AAAAA!“ | Fehler in diesem Moment; Figur klopft an Tür „API“ = automatischer Retry |
-| „OOPS COUNTER“ (Strichliste) | Anzahl Fehler (Tool-Fehler, Modellfehler, fehlgeschlagene Kompaktierung) |
+| „Hoppla-Zähler“ (Strichliste) | Anzahl Fehler (Tool-Fehler, Modellfehler, fehlgeschlagene Kompaktierung) |
 | Notizblock „LAB NOTES“ | letzte Ereignisse (rot = Fehler, blau = Kompaktierung/Delegation) |
 
 ## Datenquellen

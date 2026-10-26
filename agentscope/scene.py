@@ -5,11 +5,11 @@ Metaphern (siehe docs/SPEC.md):
   (denken, tippen/streamen, Werkzeug, quetschen, erneut versuchen, Fehler, schlafen).
 - Werkzeuge als Requisiten: bash = Hammer auf Kiste, read = Buch, edit/write = Bleistift,
   subagent = Megafon, Rest = Lupe.
-- Glas "CONTEXT" = Kontextfüllung; Presse darüber = Kompaktierung ("SQUISH!").
+- Glas „Kontext“ = Kontextfüllung; Presse darüber = Kompaktierung („quetsch!“).
 - Tacho = Tokens pro Sekunde, fliegende Münzen = Token-Strom, Zähler = Summe.
-- Kurve "CONTEXT OVER TIME" mit Sägezahn = Kompaktierungen im Verlauf.
+- Kurve „Kontext im Zeitverlauf“ mit Sägezahn = Kompaktierungen im Verlauf.
 - Kleine Figuren unten = Subagents (arbeiten / Haken / umgefallen) + Fortschrittsbalken.
-- Strichliste "OOPS" + rote Notiz = Fehler. Notizblock rechts = letzte Ereignisse.
+- Strichliste „Hoppla“ + rote Notiz = Fehler. Notizblock rechts = letzte Ereignisse.
 """
 
 from __future__ import annotations
@@ -28,22 +28,22 @@ PW, PH = 1000.0, 560.0  # virtuelles Panel
 FLOOR = 376.0
 
 ALT_TEXTS = [
-    "The context window is like a suitcase: the more you squish, the more you forget where you packed your socks.",
-    "Subagents are just interns with infinite patience and zero memory.",
-    "Every token you see here was hand-crafted by a tiny statistical artisan.",
-    "If the error tally reaches five, it's not a bug, it's a bundle.",
-    "Compaction: the art of summarizing three hours of work as 'did stuff, mostly fine'.",
-    "Retrying is just optimism with exponential backoff.",
+    "Das Kontextfenster ist wie ein Koffer: Je mehr man quetscht, desto weniger weiß man, wo die Socken sind.",
+    "Subagents sind Praktikanten mit unendlicher Geduld und null Gedächtnis.",
+    "Jedes Token hier wurde von einem winzigen statistischen Handwerker von Hand gefertigt.",
+    "Wenn die Strichliste bei fünf ist, ist es kein Bug mehr, sondern ein Bündel.",
+    "Compaction: die Kunst, drei Stunden Arbeit als „hab Sachen gemacht, meist okay“ zusammenzufassen.",
+    "Retry ist nur Optimismus mit exponentiellem Backoff.",
 ]
 
 PHASE_WORDS = {
-    "idle": "zzz… waiting for you",
-    "thinking": "thinking very hard",
-    "streaming": "typing like crazy",
-    "tool": "using tools",
-    "compacting": "squishing the context",
-    "retrying": "knocking on the API again",
-    "error": "something broke",
+    "idle": "zzz… wartet auf dich",
+    "thinking": "denkt angestrengt nach",
+    "streaming": "tippt wie verrückt",
+    "tool": "benutzt Werkzeuge",
+    "compacting": "quetscht den Kontext",
+    "retrying": "klopft wieder bei der API an",
+    "error": "etwas ist kaputt",
 }
 
 
@@ -117,12 +117,22 @@ def layout(n: int, W: float, H: float, top: float, bottom: float, gap: float = 1
 
 
 # ======================================================================== Gesamtbild
+def _header_dynamic(p, W, hs, agents, shown, max_panels, tot, subs, errs, rate, clock):
+    sub = f"{len(agents)} {'Agent' if len(agents) == 1 else 'Agenten'} · {subs} Subagents beschäftigt · {fmt_tok(tot)} Tokens gefressen · {rate:.0f} tok/s · {errs} Hoppla"
+    p.text(sub, W / 2, 76 * hs, 15 * hs, align="center", color=GRAY)
+    p.text(clock or time.strftime("%H:%M"), W - 24, 40 * hs, 22 * hs, align="right")
+    if len(agents) > max_panels:
+        p.text(f"+{len(agents) - max_panels} weitere nicht gezeigt", 24, 40 * hs, 14 * hs, color=GRAY)
+
 def render(cr: cairo.Context, W: float, H: float, agents: list[Agent], t: float, hist: History | None = None,
-           clock: str | None = None, max_panels: int = 4):
-    boil = int(t * 4)
+           clock: str | None = None, max_panels: int = 4, layer: str | None = None):
+    """layer="static" zeichnet nur Rahmen/Beschriftungen (einmal in eine Fläche), "dynamic" nur Bewegtes darüber."""
+    boil = 0 if layer == "static" else int(t * 4)
     p = Pen(cr, boil=boil)
-    cr.set_source_rgb(*PAPER)
-    cr.paint()
+    p.layer = layer
+    if p.st:
+        cr.set_source_rgb(*PAPER)
+        cr.paint()
 
     shown = agents[:max_panels]
     # Kopfzeile
@@ -131,13 +141,10 @@ def render(cr: cairo.Context, W: float, H: float, agents: list[Agent], t: float,
     errs = sum(a.errors for a in agents)
     rate = sum(a.rate for a in agents)
     hs = max(0.6, min(1.3, W / 1440))
-    p.text("What my agents are doing right now", W / 2, 46 * hs, 30 * hs, align="center", bold=True)
-    sub = f"{len(agents)} agent{'s' if len(agents) != 1 else ''} · {subs} subagents busy · {fmt_tok(tot)} tokens eaten · {rate:.0f} tok/s · {errs} oops"
-    p.text(sub, W / 2, 76 * hs, 15 * hs, align="center", color=GRAY)
-    p.text(clock or time.strftime("%H:%M"), W - 24, 40 * hs, 22 * hs, align="right")
-    if len(agents) > max_panels:
-        p.text(f"+{len(agents) - max_panels} more not shown", 24, 40 * hs, 14 * hs, color=GRAY)
-
+    if p.st:
+        p.text("Was meine Agenten gerade treiben", W / 2, 46 * hs, 30 * hs, align="center", bold=True)
+    if p.dy:
+        _header_dynamic(p, W, hs, agents, shown, max_panels, tot, subs, errs, rate, clock)
     top, bottom = 96 * hs, 44 * hs
     if not shown:
         render_empty(p, W, H, t, top, bottom)
@@ -149,11 +156,50 @@ def render(cr: cairo.Context, W: float, H: float, agents: list[Agent], t: float,
             render_panel(p, a, t, hist)
             cr.restore()
 
-    alt = ALT_TEXTS[int(t / 20) % len(ALT_TEXTS)]
-    p.text(alt, W / 2, H - 16 * hs, 13 * hs, align="center", color=GRAY, upper=False, jitter=0.3, maxw=W - 60)
+    alt = ALT_TEXTS[int(t / 20) % len(ALT_TEXTS)] if p.dy else ""
+    if alt:
+        p.text(alt, W / 2, H - 16 * hs, 13 * hs, align="center", color=GRAY, upper=False, jitter=0.3, maxw=W - 60)
 
+
+class StaticLayer:
+    """Rahmen, Möbel-lose Beschriftungen und Achsen einmal in eine Fläche rendern und nur noch blitten.
+
+    Neu gerendert wird nur, wenn sich Größe, Panel-Anzahl oder Titel ändern (Schlüssel `key`)."""
+
+    def __init__(self):
+        self.key = None
+        self.surf = None
+        self.renders = 0
+
+    @staticmethod
+    def make_key(W, H, agents, max_panels=4):
+        return (round(W), round(H), tuple(a.title for a in agents[:max_panels]), len(agents) > max_panels)
+
+    def paint(self, cr, W, H, agents, max_panels=4):
+        key = self.make_key(W, H, agents, max_panels)
+        m = cr.get_matrix()
+        sx, sy = (m.xx, m.yy) if m.xx and m.yy else (1.0, 1.0)
+        key += (round(sx, 3), round(sy, 3))
+        if key != self.key or self.surf is None:
+            self.surf = cr.get_target().create_similar_image(cairo.FORMAT_RGB24, max(1, int(W * sx)), max(1, int(H * sy)))
+            c2 = cairo.Context(self.surf)
+            c2.scale(sx, sy)
+            render(c2, W, H, agents, 0.0, None, clock="", max_panels=max_panels, layer="static")
+            self.key = key
+            self.renders += 1
+        cr.save()
+        cr.scale(1 / sx, 1 / sy)
+        cr.set_source_surface(self.surf, 0, 0)
+        cr.paint()
+        cr.restore()
+
+def render_cached(cr, W, H, agents, t, hist, layer_cache: StaticLayer, clock=None, max_panels=4):
+    layer_cache.paint(cr, W, H, agents, max_panels)
+    render(cr, W, H, agents, t, hist, clock=clock, max_panels=max_panels, layer="dynamic")
 
 def render_empty(p: Pen, W, H, t, top, bottom):
+    if not p.dy:
+        return
     cr = p.cr
     s = min(W / PW, (H - top - bottom) / PH) * 0.9
     cr.save()
@@ -170,31 +216,35 @@ def render_empty(p: Pen, W, H, t, top, bottom):
     for i in range(3):
         k = (t * 0.5 + i / 3) % 1
         p.text("z", 420 - k * 40 + i * 6, 250 - k * 120, 16 + k * 22, color=GRAY, hand=True)
-    p.text("No agents are running.", PW / 2, 470, 26, align="center", bold=True)
-    p.text("Start pi and come back – this panel will fill up.", PW / 2, 506, 17, align="center", color=GRAY)
+    p.text("Es läuft gerade kein Agent.", PW / 2, 470, 26, align="center", bold=True)
+    p.text("Starte pi und komm wieder – dann füllt sich das Bild.", PW / 2, 506, 17, align="center", color=GRAY)
     cr.restore()
 
 
 # ======================================================================== Panel
 def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
-    cr = p.cr
-    p.rect(0, 0, PW, PH, lw=3)
-    # Beschriftungskasten wie xkcd-Caption
     title = p.fit(a.title, 22, 420)
     tw = p.text_width(title, 22, bold=True)
-    p.rect(-1, -1, tw + 36, 40, lw=2.4, fill=PAPER)
-    p.text(title, 16, 28, 22, bold=True)
-    phase_txt = PHASE_WORDS.get(a.phase, a.phase)
-    p.text(f"{a.model or '?'} · turn {a.turn} · {phase_txt}", tw + 52, 28, 15, color=GRAY, maxw=820 - tw - 52)
-    if a.source == "log":
-        p.text("(from session log)", 830, 28, 12, color=GRAY, align="right")
-
-    draw_actor(p, a, t)
+    if p.st:
+        p.rect(0, 0, PW, PH, lw=3)
+        # Beschriftungskasten wie xkcd-Caption
+        p.rect(-1, -1, tw + 36, 40, lw=2.4, fill=PAPER)
+        p.text(title, 16, 28, 22, bold=True)
+        p.line(20, FLOOR, 440, FLOOR, w=1.6, color=GRAY)
+    if p.dy:
+        phase_txt = PHASE_WORDS.get(a.phase, a.phase)
+        p.text(f"{a.model or '?'} · Runde {a.turn} · {phase_txt}", tw + 52, 28, 15, color=GRAY, maxw=820 - tw - 52)
+        if a.source == "log":
+            p.text("(aus dem Sitzungslog)", 830, 28, 12, color=GRAY, align="right")
+        draw_actor(p, a, t)
     draw_context_jar(p, a, t, 470, 140, 92, 190)
     draw_gauge(p, a, t, 690, 140, hist=hist)
     draw_chart(p, a, t, hist, 590, 250, 230, 130)
     draw_notebook(p, a, t, 845, 52, 145, 345)
-    draw_bottom(p, a, t, 0, 404, PW, PH - 404)
+    if p.st:
+        p.line(10, 404, PW - 10, 404, w=1.2, color=LIGHT)
+    if p.dy:
+        draw_bottom(p, a, t, 0, 404, PW, PH - 404)
 
 
 # ------------------------------------------------------------------------ Hauptfigur
@@ -270,7 +320,6 @@ def draw_actor(p: Pen, a: Agent, t: float):
     if ph != "retrying":
         p.desk(cx + 28, desk_y, 220, floor)
         p.chair(cx - 6, seat_y, floor, facing=1)
-    p.line(20, floor, 440, floor, w=1.6, color=GRAY)
 
     sw = math.sin(t * 7)
     glow = ph in ("thinking", "streaming", "tool")
@@ -283,7 +332,7 @@ def draw_actor(p: Pen, a: Agent, t: float):
         for i in range(3):
             k = (t * 0.45 + i / 3) % 1
             p.text("z", h["head"][0] - 20 - k * 30, h["head"][1] - 30 - k * 110, 16 + k * 22, color=GRAY, hand=True)
-        caption(p, "waiting for your next prompt", cx + 60)
+        caption(p, "wartet auf deinen nächsten Prompt", cx + 60)
     elif ph == "thinking":
         # zurückgelehnt, Hand am Kinn
         hd = seated_at(hip, lean=-6)["head"]
@@ -292,22 +341,22 @@ def draw_actor(p: Pen, a: Agent, t: float):
         k = int(t * 0.5) * 7 % max(1, len(words))
         frag = " ".join(words[k:k + 9]) or "…"
         think_at(p, h["head"], frag + " " + "." * (1 + int(t * 2) % 3))
-        caption(p, "thinking it over", cx + 60)
+        caption(p, "denkt nach", cx + 60)
     elif ph == "streaming":
         hl, hr, lean, look = typing_hands(t, a.rate, keys)
         seated(p, hip, lean=lean, look=look, hands=(hl, hr))
-        caption(p, "streaming tokens", cx + 60)
+        caption(p, "streamt Tokens", cx + 60)
     elif ph == "tool":
         draw_tool_pose(p, kind, tool, hip, cx, desk_y, floor, t, keys)
         caption(p, f"{tool['name']}: {tool['label']}", cx + 60)
         if len(a.tools) > 1:
-            p.text(f"+{len(a.tools) - 1} more tools running", cx + 300, 80, 13, color=GRAY, align="center")
+            p.text(f"+{len(a.tools) - 1} weitere Tools laufen", cx + 300, 80, 13, color=GRAY, align="center")
     elif ph == "compacting":
         # zeigt aufgeregt aufs Glas (rechts oben)
         shx, shy = seated_at(hip, lean=4 + 3 * sw)["sh"]
         h = seated(p, hip, lean=4 + 3 * sw, hands=((shx + 46, shy - 14 + 3 * sw), (cx + 26, hip[1] - 5)))
-        say_at(p, h["head"], "hold on, packing…", dx=60)
-        caption(p, "summarizing old context", cx + 60)
+        say_at(p, h["head"], "Moment, ich packe ein…", dx=60)
+        caption(p, "fasst alten Kontext zusammen", cx + 60)
     elif ph == "retrying":
         # steht an der Tür "API" und klopft
         dx = 320
@@ -319,17 +368,17 @@ def draw_actor(p: Pen, a: Agent, t: float):
         shx, shy = standing_at(fx, flip=True)["sh"]
         h = standing(p, fx, flip=True, hands=((dx - 2 - 10 * (1 - knock), shy - 6), (fx + 4, shy + 40)))
         if knock > 0.85:
-            p.text("knock", dx - 14, floor - 205, 16, color=GRAY, hand=True)
+            p.text("klopf", dx - 14, floor - 205, 16, color=GRAY, hand=True)
         r = a.retry or {}
-        say_at(p, h["head"], f"try {r.get('attempt', '?')} of {r.get('max', '?')}…", dx=-120, w=220)
-        caption(p, r.get("error") or "provider said no", 220)
+        say_at(p, h["head"], f"Versuch {r.get('attempt', '?')} von {r.get('max', '?')}…", dx=-120, w=220)
+        caption(p, r.get("error") or "Anbieter sagt nein", 220)
     elif ph == "error":
         p.flame(lap_x + 8, desk_y - 30, t)
         p.smoke(lap_x + 12, desk_y - 60, t)
         jump = abs(math.sin(t * 5)) * 12
         h = standing(p, cx - 60, lift=jump, flip=False, la=(160 + 15 * sw, 200), ra=(-160 - 15 * sw, -200), eyes="dots")
         say_at(p, h["head"], "AAAAA!", w=170, h=70, size=24, color=RED, bold=True, dx=-10)
-        caption(p, a.last_error or "error", cx + 60, color=RED)
+        caption(p, a.last_error or "Fehler", cx + 60, color=RED)
     else:
         seated(p, hip, lean=4, hands=((cx + 24, hip[1] - 6), (cx + 30, hip[1] - 4)))
 
@@ -493,7 +542,7 @@ def draw_tool_pose(p: Pen, kind, tool, hip, cx, desk_y, floor, t, keys):
         shx, shy = seated_at(hip, lean=2)["sh"]
         h = seated(p, hip, lean=2, hands=((shx + 30, shy + 2), (shx + 22, shy + 14)))
         p.megaphone(h["hl"][0], h["hl"][1] - 2, t)
-        say_at(p, h["head"], "go, minions!", w=200, h=64, dx=70)
+        say_at(p, h["head"], "los, Minions!", w=200, h=64, dx=70)
     else:
         # beugt sich mit der Lupe über den Laptop
         shx, shy = seated_at(hip, lean=22 + 4 * sw)["sh"]
@@ -518,6 +567,10 @@ def context_fill(a: Agent) -> tuple[float, bool]:
 
 def draw_context_jar(p: Pen, a: Agent, t: float, x, y, w, h):
     cr = p.cr
+    if p.st:
+        p.text("Kontext", x + w / 2, y + h + 26, 16, align="center", bold=True)
+    if not p.dy:
+        return
     pct, guessed = context_fill(a)
     squeeze = 0.0
     recent = a.compact_at and (time.time() - a.compact_at) < 12 and a.compact_count > 0
@@ -544,57 +597,61 @@ def draw_context_jar(p: Pen, a: Agent, t: float, x, y, w, h):
     p.line(x - 20, py, x + w + 20, py, w=6)
     p.line(x + w / 2, py, x + w / 2, y - 40, w=3)
     p.line(x - 30, y - 40, x + w + 30, y - 40, w=3)
-    p.text("context", x + w / 2, y + h + 26, 16, align="center", bold=True)
     if guessed:
-        label = f"~{fmt_tok(a.ctx_tokens)} tokens" if a.ctx_tokens else "unknown"
+        label = f"~{fmt_tok(a.ctx_tokens)} Tokens" if a.ctx_tokens else "unbekannt"
     else:
-        label = f"{pct:.0f}% of {fmt_tok(a.ctx_window)}"
+        label = f"{pct:.0f} % von {fmt_tok(a.ctx_window)}"
     p.text(label, x + w / 2, y + h + 46, 14, align="center", color=col if pct > 60 else INK)
     if a.compacting:
-        p.text("squeeeeze!", x + w / 2, y - 52, 18, align="center", bold=True, color=RED)
+        p.text("quetsch!", x + w / 2, y - 52, 18, align="center", bold=True, color=RED)
     elif recent:
-        p.text("squish!", x + w / 2, y - 52, 20, align="center", bold=True, color=BLUE)
+        p.text("gequetscht!", x + w / 2, y - 52, 20, align="center", bold=True, color=BLUE)
         if a.compact_before:
-            p.text(f"{fmt_tok(a.compact_before)} → {fmt_tok(a.compact_after) if a.compact_after else 'less'}", x + w / 2, y - 76, 13, align="center", color=GRAY)
+            p.text(f"{fmt_tok(a.compact_before)} → {fmt_tok(a.compact_after) if a.compact_after else 'weniger'}", x + w / 2, y - 76, 13, align="center", color=GRAY)
     if a.compact_count:
-        p.text(f"squished {a.compact_count}×", x + w / 2, y + h + 64, 12, align="center", color=GRAY)
+        p.text(f"{a.compact_count}× gequetscht", x + w / 2, y + h + 64, 12, align="center", color=GRAY)
 
 
 # ------------------------------------------------------------------------ Tacho
 def draw_gauge(p: Pen, a: Agent, t: float, cx, cy, r=78, vmax=150.0, hist: History | None = None):
     rate = max(0.0, a.rate or 0.0)
     shown = hist.needle(a.key, rate, t) if hist else rate
-    p.arc(cx, cy, r, math.pi, 2 * math.pi, w=2.6)
-    p.line(cx - r, cy, cx + r, cy, w=2)
-    for i in range(6):
-        ang = math.pi + math.pi * i / 5
-        p.line(cx + (r - 10) * math.cos(ang), cy + (r - 10) * math.sin(ang), cx + r * math.cos(ang), cy + r * math.sin(ang), w=2, amp=0)
-    # roter Bereich
-    p.arc(cx, cy, r - 6, math.pi * 1.8, 2 * math.pi, w=5, color=RED)
+    if p.st:
+        p.arc(cx, cy, r, math.pi, 2 * math.pi, w=2.6)
+        p.line(cx - r, cy, cx + r, cy, w=2)
+        for i in range(6):
+            ang = math.pi + math.pi * i / 5
+            p.line(cx + (r - 10) * math.cos(ang), cy + (r - 10) * math.sin(ang), cx + r * math.cos(ang), cy + r * math.sin(ang), w=2, amp=0)
+        p.arc(cx, cy, r - 6, math.pi * 1.8, 2 * math.pi, w=5, color=RED)  # roter Bereich
+        p.text("Tokens / Sek.", cx, cy - r - 12, 15, align="center", bold=True)
+    if not p.dy:
+        return
     v = shown + (1.5 * math.sin(t * 13) if shown > 0.5 else 0)
     ang = math.pi + math.pi * min(1.0, v / vmax)
     p.line(cx, cy, cx + (r - 16) * math.cos(ang), cy + (r - 16) * math.sin(ang), w=3, color=RED, amp=0)
     p.circle(cx, cy, 5, w=2, fill=INK)
-    p.text("tokens / sec", cx, cy - r - 12, 15, align="center", bold=True)
     p.text(f"~{rate:.0f}" if a.rate_est else f"{rate:.0f}", cx, cy + 26, 24, align="center", bold=True)
-    p.text(f"total eaten: {fmt_tok(a.tok_total)}", cx, cy + 50, 14, align="center")
+    p.text(f"gesamt gefressen: {fmt_tok(a.tok_total)}", cx, cy + 50, 14, align="center")
     if a.tok_in or a.tok_out:
-        p.text(f"in {fmt_tok(a.tok_in)} · out {fmt_tok(a.tok_out)}", cx, cy + 68, 12, align="center", color=GRAY)
+        p.text(f"rein {fmt_tok(a.tok_in)} · raus {fmt_tok(a.tok_out)}", cx, cy + 68, 12, align="center", color=GRAY)
 
 
 # ------------------------------------------------------------------------ Kurve
 def draw_chart(p: Pen, a: Agent, t: float, hist: History | None, x, y, w, h):
-    p.line(x, y + h, x + w, y + h, w=2)
-    p.line(x, y + h, x, y, w=2)
-    p.poly([(x - 5, y + 8), (x, y), (x + 5, y + 8)], w=2)
-    p.poly([(x + w - 8, y + h - 5), (x + w, y + h), (x + w - 8, y + h + 5)], w=2)
-    p.text("context over time", x + w / 2, y - 8, 13, align="center", bold=True)
-    p.text("time →", x + w - 4, y + h + 16, 11, align="right", color=GRAY)
+    if p.st:
+        p.line(x, y + h, x + w, y + h, w=2)
+        p.line(x, y + h, x, y, w=2)
+        p.poly([(x - 5, y + 8), (x, y), (x + 5, y + 8)], w=2)
+        p.poly([(x + w - 8, y + h - 5), (x + w, y + h), (x + w - 8, y + h + 5)], w=2)
+        p.text("Kontext im Zeitverlauf", x + w / 2, y - 8, 13, align="center", bold=True)
+        p.text("Zeit →", x + w - 4, y + h + 16, 11, align="right", color=GRAY)
+    if not p.dy:
+        return
     pts = list(hist.data.get(a.key, [])) if hist else []
     win = a.ctx_window or max([v for _, v in pts] + [1])
     if a.ctx_window:
         p.line(x + 4, y + 12, x + w - 6, y + 12, w=1.2, color=RED, dash=[6, 5])
-        p.text("limit", x + w - 6, y + 8, 11, align="right", color=RED)
+        p.text("Limit", x + w - 6, y + 8, 11, align="right", color=RED)
     if len(pts) >= 2:
         t0, t1 = pts[0][0], max(pts[-1][0], pts[0][0] + 30)
         cr = p.cr
@@ -610,9 +667,9 @@ def draw_chart(p: Pen, a: Agent, t: float, hist: History | None, x, y, w, h):
             if t0 <= m <= t1:
                 mx = x + 4 + (w - 12) * (m - t0) / (t1 - t0)
                 p.line(mx, y + 20, mx + 6, y + 40, w=1.4)
-                p.text("squish", mx, y + 18, 11, align="center")
+                p.text("quetsch", mx, y + 18, 11, align="center")
     else:
-        p.text("(collecting…)", x + w / 2, y + h / 2 + 5, 12, align="center", color=GRAY)
+        p.text("(sammle Daten…)", x + w / 2, y + h / 2 + 5, 12, align="center", color=GRAY)
 
 
 # ------------------------------------------------------------------------ Notizblock
@@ -622,10 +679,13 @@ KIND_MARK = {"error": "!", "tool_error": "!", "compact_failed": "!", "compact": 
 
 def draw_notebook(p: Pen, a: Agent, t: float, x, y, w, h):
     # Spiralblock
-    p.rect(x, y, w, h, lw=2, fill=PAPER)
-    for i in range(7):
-        p.circle(x + 12 + i * (w - 24) / 6, y, 4, w=1.5)
-    p.text("lab notes", x + w / 2, y + 26, 14, align="center", bold=True)
+    if p.st:
+        p.rect(x, y, w, h, lw=2, fill=PAPER)
+        for i in range(7):
+            p.circle(x + 12 + i * (w - 24) / 6, y, 4, w=1.5)
+        p.text("Laborbuch", x + w / 2, y + 26, 14, align="center", bold=True)
+    if not p.dy:
+        return
     evs = a.events[-11:]
     yy = y + 50
     for e in reversed(evs):
@@ -637,12 +697,11 @@ def draw_notebook(p: Pen, a: Agent, t: float, x, y, w, h):
         if yy > y + h - 8:
             break
     if not evs:
-        p.text("(nothing yet)", x + w / 2, y + 70, 12, align="center", color=GRAY)
+        p.text("(noch nichts)", x + w / 2, y + 70, 12, align="center", color=GRAY)
 
 
 # ------------------------------------------------------------------------ Unterer Streifen
 def draw_bottom(p: Pen, a: Agent, t: float, x, y, w, h):
-    p.line(x + 10, y, x + w - 10, y, w=1.2, color=LIGHT)
     run = next((r for r in reversed(a.runs) if not r.get("finished")), None) or (a.runs[-1] if a.runs else None)
     if run and run.get("agents"):
         draw_minions(p, run, t, x + 20, y, 650, h)
@@ -660,7 +719,7 @@ def draw_minions(p: Pen, run: dict, t: float, x, y, w, h):
     agents = run.get("agents") or []
     total = max(run.get("total", len(agents)), len(agents))
     done, failed = run.get("done", 0), run.get("failed", 0)
-    label = f"subagents ({run.get('mode', '')}): {done}/{total} done" + (f", {failed} fell over" if failed else "")
+    label = f"Subagents ({run.get('mode', '')}): {done}/{total} fertig" + (f", {failed} umgefallen" if failed else "")
     lw_ = p.text(label, x, y + 22, 15, bold=True)
     # Fortschrittsbalken hinter der Überschrift
     bx, by, bh = x + lw_ + 20, y + 9, 16
@@ -706,10 +765,10 @@ def draw_minions(p: Pen, run: dict, t: float, x, y, w, h):
 
 
 def draw_tool_bars(p: Pen, a: Agent, x, y, w, h):
-    p.text("tools used this session", x, y + 4, 15, bold=True)
+    p.text("Tools in dieser Sitzung", x, y + 4, 15, bold=True)
     items = sorted(a.tool_counts.items(), key=lambda kv: -kv[1])[:5]
     if not items:
-        p.text("(no tools yet – no minions deployed)", x, y + 40, 13, color=GRAY)
+        p.text("(noch keine Tools – keine Minions im Einsatz)", x, y + 40, 13, color=GRAY)
         return
     mx = max(v for _, v in items)
     bw = (w - 20) / max(1, len(items))
@@ -723,10 +782,10 @@ def draw_tool_bars(p: Pen, a: Agent, x, y, w, h):
 
 
 def draw_oops(p: Pen, a: Agent, t: float, x, y, w, h):
-    p.text("oops counter", x, y + 4, 15, bold=True, color=RED if a.errors else INK)
+    p.text("Hoppla-Zähler", x, y + 4, 15, bold=True, color=RED if a.errors else INK)
     if a.errors:
         p.tally(x + 6, y + 40, a.errors, h=20, color=RED, maxn=20)
         recent = a.last_error_at and time.time() - a.last_error_at < 30
         p.lines(a.last_error, x, y + 64, 11, w - 10, max_lines=2, color=RED if recent else GRAY, jitter=0.4, upper=False)
     else:
-        p.text("0 – suspiciously quiet", x, y + 36, 13, color=GRAY)
+        p.text("0 – verdächtig ruhig", x, y + 36, 13, color=GRAY)

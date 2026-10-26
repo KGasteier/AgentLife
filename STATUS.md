@@ -1,5 +1,11 @@
 # STATUS
 
+## Stand 0.4.0
+- **Deutsche Oberfläche** (Texte in `scene.py`, Ereignisse in `core.ts`/`model.py`); Fachbegriffe (Token, Tools, Retry, Compaction) bleiben.
+- **Bug „wartet auf deinen nächsten Prompt“ trotz Aktivität:** Das Log-Fallback galt nach 20 s Stille als idle. pi schreibt aber erst nach fertiger Nachricht, ein langer Modellaufruf oder eine Kompaktierung sieht also wie Leerlauf aus. Jetzt `model.log_phase`: idle nur nach abgeschlossener Antwort; offene Anfrage gilt `BUSY_MAX_S` (10 min) als aktiv.
+- **Bug Kompaktierung nicht sichtbar:** Mit Erweiterung funktioniert sie (live geprüft: `compacting` 13,6–24,5 s, Zähler 0→1). Laufende pi-Prozesse ohne neu geladene Erweiterung nutzen das Log, das keine laufende Kompaktierung kennt → zeigt jetzt „denkt nach“ statt Schlaf; echte Anzeige nach Neustart/`/reload` von pi. Manuelles `/compact` bleibt nicht mehr in „thinking“ hängen (kein `agent_settled`).
+- **Statische Ebene** (`scene.StaticLayer`, `render(layer=…)`) + **Text-Maskencache** (`Pen._text_cached`) + Takt über `add_tick_callback`. CPU-Zeit je Frame 2880×1808: 41 → 18 ms; im Vollbild ca. 45 % → 41 % eines Kerns (Rest: GTK-Software-Upload). `AGENTSCOPE_DEBUG=1` gibt fps/ms aus.
+
 ## Stand 0.3.0
 - Tacho bewegt sich jetzt auch ohne Live-Datei: Rate aus den Session-Logs (Output-Tokens / Antwortdauer,
   Anzeige „~N“), Nadel geglättet. Ursache war: laufende pi-Prozesse ohne geladene Erweiterung → Log-Fallback ohne Rate.
@@ -32,7 +38,6 @@
 - Modelle ohne `contextWindow` (Log-Fallback): Füllstand wird mit 200k geschätzt („~N tokens“).
 
 ## TODO
-1. Echte Kompaktierung live testen (`/compact` in einer Test-Session) und Animation prüfen.
+1. Laufende pi-Prozesse neu starten bzw. `/reload`, damit sie die Erweiterung laden; dann Kompaktierungsanzeige im Screensaver am echten Agenten prüfen.
 2. Optional: Auslösung über hypridle als echter Idle-Screensaver.
-3. Performance: statische Ebene (Rahmen, Möbel, Titel) einmal vorrendern und nur Figuren/Tacho
-   neu zeichnen; Text-Glyphen cachen. Gemessen: `show_text` ist der größte Einzelposten.
+3. Performance: Rest sind GTK-Software-Upload und dynamische Striche; falls nötig `--fps 5`.

@@ -35,6 +35,9 @@ class Scope(Gtk.ApplicationWindow):
         self.started = time.monotonic()
         self.agents: list = []
         self.hist = scene.History()
+        self.layer = scene.StaticLayer()
+        self.last_frame = 0.0
+        self.frame_dt = 1.0 / max(1, fps)
         self.last_poll = 0.0
         self.motion_origin = None
 
@@ -57,7 +60,8 @@ class Scope(Gtk.ApplicationWindow):
             self.fullscreen()
             self.set_cursor_from_name("none")
         self.poll()
-        GLib.timeout_add(max(16, int(1000 / fps)), self.tick)
+        # Takt am Frame-Clock des Compositors: gezeichnet wird höchstens fps-mal pro Sekunde, nie zwischen zwei Frames
+        self.add_tick_callback(self.tick)
 
     # -------------------------------------------------------------- Daten
     def poll(self):
@@ -69,14 +73,27 @@ class Scope(Gtk.ApplicationWindow):
         self.hist.sample(self.agents, now)
         self.last_poll = time.monotonic()
 
-    def tick(self):
-        if self.demo or time.monotonic() - self.last_poll >= POLL_S:
+    def tick(self, _widget, _clock):
+        now = time.monotonic()
+        if now - self.last_frame < self.frame_dt * 0.9:
+            return GLib.SOURCE_CONTINUE
+        self.last_frame = now
+        if self.demo or now - self.last_poll >= POLL_S:
             self.poll()
         self.area.queue_draw()
-        return True
+        return GLib.SOURCE_CONTINUE
 
     def on_draw(self, _area, cr, w, h):
-        scene.render(cr, w, h, self.agents, time.monotonic() - self.t0, self.hist)
+        t0 = time.process_time()
+        scene.render_cached(cr, w, h, self.agents, time.monotonic() - self.t0, self.hist, self.layer)
+        if os.environ.get("AGENTSCOPE_DEBUG"):
+            self._dbg = getattr(self, "_dbg", [0, 0.0, time.monotonic()])
+            self._dbg[0] += 1
+            self._dbg[1] += time.process_time() - t0
+            if time.monotonic() - self._dbg[2] >= 5:
+                n = self._dbg[0]
+                print(f"agentscope: {n / 5:.1f} fps, draw {1000 * self._dbg[1] / n:.1f} ms, static renders {self.layer.renders}, {w}x{h}", file=sys.stderr)
+                self._dbg = [0, 0.0, time.monotonic()]
 
     # -------------------------------------------------------------- Eingabe
     def maybe_quit(self, force=False, why="?"):

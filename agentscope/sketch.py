@@ -74,6 +74,8 @@ def pick_font() -> str:
 
 
 _ADV: dict = {}
+_MASKS: dict = {}
+_NOMASK = bool(__import__("os").environ.get("AGENTSCOPE_NOMASK"))
 LEG = 30.0   # Ober-/Unterschenkel; Rumpf (Hüfte–Hals) = 48
 ARM = 24.0   # Ober-/Unterarm
 CLOUD_RB = 24.0  # größter Bogenradius der Gedankenwolke (inkl. Wackeln ≈ +5 %)
@@ -90,8 +92,17 @@ class Pen:
         self.font = font or pick_font()
         self.hand = hand_font() if font is None else font
         self._cache: dict = {}
+        self.layer = None   # None = alles, "static" = nur Unveränderliches, "dynamic" = nur Bewegtes
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
+
+    @property
+    def st(self) -> bool:
+        return self.layer in (None, "static")
+
+    @property
+    def dy(self) -> bool:
+        return self.layer in (None, "dynamic")
 
     # ------------------------------------------------------------------ Linien
     def _wpts(self, x0, y0, x1, y1, amp):
@@ -264,6 +275,8 @@ class Pen:
         elif align == "right":
             x -= width
         cr.set_source_rgb(*color)
+        if self._text_cached(s, x, y, size, color, bold, hand, jitter, width):
+            return width
         # Schrift „kocht“ nicht mit: ruhiger Text liest sich besser und flackert nicht (Seed ohne boil)
         r = random.Random(_seed(len(s), round(x), round(y)))
         cx = x
@@ -278,6 +291,64 @@ class Pen:
                 cr.restore()
             cx += adv
         return width
+
+    def _text_cached(self, s, x, y, size, color, bold, hand, jitter, width) -> bool:
+        """Fertig gesetzte Zeile als Alpha-Maske (Gerätepixel) zwischenspeichern und nur noch blitten.
+
+        Die Schrift „kocht“ nicht mit (Seed ohne boil), eine Zeile sieht also immer gleich aus. Schlüssel enthält die
+        Gerätematrix, die Position wird auf ganze Pixel gerundet (Teilpixel-Versatz bleibt in der Maske)."""
+        if len(s) < 3 or _NOMASK:
+            return False
+        cr = self.cr
+        m = cr.get_matrix()
+        if abs(m.xy) > 1e-6 or abs(m.yx) > 1e-6:
+            return False
+        dx, dy = m.x0 + x * m.xx, m.y0 + y * m.yy
+        ix, iy = math.floor(dx), math.floor(dy)
+        fx, fy = round((dx - ix) * 2) / 2, round((dy - iy) * 2) / 2
+        key = (s, size, bold, hand, round(jitter, 2), self._fkey[0], round(m.xx, 3), round(m.yy, 3), fx, fy, len(s))
+        hit = _MASKS.get(key)
+        if hit is None:
+            asc = size * 1.4 * m.yy
+            w_px = int(width * m.xx + size * 1.2 * m.xx + 8)
+            h_px = int(size * 2.2 * m.yy + 8)
+            if w_px > 4000 or h_px > 600:
+                return False
+            ox, oy = 4 + size * 0.3 * m.xx, asc + 4
+            surf = cairo.ImageSurface(cairo.FORMAT_A8, w_px, h_px)
+            c2 = cairo.Context(surf)
+            c2.translate(ox + fx, oy + fy)
+            c2.scale(m.xx, m.yy)
+            fo = cr.get_font_options()
+            c2.set_font_options(fo)
+            c2.select_font_face(self._fkey[0], cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
+            c2.set_font_size(size)
+            c2.set_source_rgb(0, 0, 0)
+            self._glyphs(c2, s, 0.0, 0.0, size, jitter, x, y)
+            if len(_MASKS) > 3000:
+                _MASKS.clear()
+            hit = _MASKS[key] = (surf, ox, oy)
+        surf, ox, oy = hit
+        cr.save()
+        cr.identity_matrix()
+        cr.set_source_rgb(*color)
+        cr.mask_surface(surf, ix - ox, iy - oy)
+        cr.restore()
+        return True
+
+    def _glyphs(self, cr, s, x0, y0, size, jitter, sx, sy):
+        r = random.Random(_seed(len(s), round(sx), round(sy)))
+        cx = x0
+        for ch in s:
+            adv = self._adv(ch)
+            if ch != " ":
+                cr.save()
+                cr.translate(cx + adv / 2, y0 + r.uniform(-0.9, 0.9) * jitter * size / 18)
+                cr.rotate(r.uniform(-0.05, 0.05) * jitter)
+                cr.move_to(-adv / 2, 0)
+                cr.show_text(ch)
+                cr.restore()
+            cx += adv
 
     def wrap(self, text, size, maxw, bold=False, upper=True, hand=None) -> list[str]:
         """Zeilenumbruch an Wortgrenzen; überlange Wörter werden gekürzt."""

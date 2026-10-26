@@ -63,6 +63,18 @@ test("Kompaktierung", () => {
 	assert.equal(t.state.compaction.active, false);
 });
 
+test("Regression: manuelles /compact endet im Leerlauf, automatisches im Lauf", () => {
+	const t = mk();
+	t.compactStart("manual", 90_000, 1);
+	t.compactEnd({ tokensBefore: 90_000 }, 2);
+	assert.equal(t.state.phase, "idle", "kein agent_settled nach manuellem Compact");
+	t.agentStart(3);
+	t.compactStart("threshold", 150_000, 4);
+	assert.equal(t.state.phase, "compacting");
+	t.compactEnd({ tokensBefore: 150_000 }, 5);
+	assert.equal(t.state.phase, "thinking", "der Lauf geht weiter");
+});
+
 test("Retry", () => {
 	const t = mk();
 	t.retryStart(1, 3, "529 overloaded", 1);

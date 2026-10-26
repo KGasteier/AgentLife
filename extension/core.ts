@@ -285,7 +285,7 @@ export class Tracker {
 			const n = expectedSubagents(args);
 			this.subArgs.set(id, n);
 			this.upsertRun({ toolCallId: id, mode: args?.tasks?.length ? "parallel" : args?.chain?.length ? "chain" : "single", total: n, done: 0, running: 0, failed: 0, finished: false, agents: [] });
-			this.event("subagent", `delegates ${label}`, now);
+			this.event("subagent", `delegiert ${label}`, now);
 		} else {
 			this.event("tool", `${name}: ${label}`, now);
 		}
@@ -309,7 +309,7 @@ export class Tracker {
 			if (run) {
 				// Bei Abschluss zählen nicht mehr gemeldete Agenten als fehlgeschlagen.
 				this.upsertRun(run);
-				this.event("done", `subagents: ${run.done}/${run.total} done, ${run.failed} failed`, now);
+				this.event("done", `Subagents: ${run.done}/${run.total} fertig, ${run.failed} fehlgeschlagen`, now);
 			} else {
 				const r = this.state.subagentRuns.find((x) => x.toolCallId === id);
 				if (r) r.finished = true;
@@ -320,7 +320,7 @@ export class Tracker {
 			this.state.errors++;
 			const text = Array.isArray(result?.content) ? result.content.map((c: any) => c?.text ?? "").join(" ") : "";
 			this.state.lastError = { msg: clip(`${name}: ${text || "failed"}`, 120), at: now };
-			this.event("tool_error", `${name} failed: ${text}`, now);
+			this.event("tool_error", `${name}-Fehler: ${text}`, now);
 		}
 		if (!this.state.tools.length && this.state.phase === "tool") this.state.phase = "thinking";
 		this.recomputePhase();
@@ -338,7 +338,7 @@ export class Tracker {
 	compactStart(reason: string, tokensBefore: number | null, now: number) {
 		this.state.compaction = { ...this.state.compaction, active: true, reason, tokensBefore, tokensAfter: null, at: now };
 		this.state.phase = "compacting";
-		this.event("compact", `compacting context (${reason})${tokensBefore ? ` ${Math.round(tokensBefore / 1000)}k` : ""}`, now);
+		this.event("compact", `komprimiere Kontext (${reason})${tokensBefore ? ` ${Math.round(tokensBefore / 1000)}k` : ""}`, now);
 		this.touch(now);
 	}
 
@@ -351,20 +351,22 @@ export class Tracker {
 		c.tokensAfter = entry?.estimatedTokensAfter ?? entry?.tokensAfter ?? null;
 		this.state.phase = "thinking";
 		this.recomputePhase();
-		this.event("compact", `context squeezed${c.tokensBefore ? ` from ${Math.round(c.tokensBefore / 1000)}k` : ""}`, now);
+		// manuelles /compact startet keinen Agentenlauf, also kommt auch kein agent_settled: sofort wieder frei
+		if (c.reason === "manual" && this.state.phase === "thinking") this.state.phase = "idle";
+		this.event("compact", `Kontext gequetscht${c.tokensBefore ? ` von ${Math.round(c.tokensBefore / 1000)}k` : ""}`, now);
 		this.touch(now);
 	}
 
 	compactFailed(msg: string, now: number) {
 		this.state.compaction.active = false;
-		this.event("compact_failed", `compaction failed: ${msg}`, now);
-		this.error(`compaction failed: ${msg}`, now);
+		this.event("compact_failed", `Compaction fehlgeschlagen: ${msg}`, now);
+		this.error(`Compaction fehlgeschlagen: ${msg}`, now);
 	}
 
 	retryStart(attempt: number, max: number, error: string, now: number) {
 		this.state.retry = { attempt, max, error: clip(error, 80) };
 		this.state.phase = "retrying";
-		this.event("retry", `retry ${attempt}/${max}: ${error}`, now);
+		this.event("retry", `Retry ${attempt}/${max}: ${error}`, now);
 		this.touch(now);
 	}
 

@@ -118,7 +118,7 @@ export default function agentscope(pi: ExtensionAPI) {
 	on("session_compact_failed", (e, _c, now) => {
 		if (e?.aborted) {
 			tracker!.state.compaction.active = false;
-			tracker!.event("compact_failed", "compaction aborted", now);
+			tracker!.event("compact_failed", "Compaction abgebrochen", now);
 		} else tracker!.compactFailed(e?.errorMessage ?? "unknown", now);
 	});
 	on("auto_retry_start", (e, _c, now) => tracker!.retryStart(e?.attempt ?? 1, e?.maxAttempts ?? 3, e?.errorMessage ?? "", now));
