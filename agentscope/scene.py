@@ -22,6 +22,7 @@ import cairo
 
 from . import dance
 from .model import Agent
+from . import sketch
 from .sketch import LEG, BLUE, GRAY, INK, LIGHT, PAPER, RED, Pen
 
 PW, PH = 1000.0, 560.0  # virtuelles Panel
@@ -179,16 +180,17 @@ class StaticLayer:
         key = self.make_key(W, H, agents, max_panels)
         m = cr.get_matrix()
         sx, sy = (m.xx, m.yy) if m.xx and m.yy else (1.0, 1.0)
-        key += (round(sx, 3), round(sy, 3))
+        ds = cr.get_target().get_device_scale()[0] * sketch.HINT_SCALE  # HiDPI: GTK setzt den Maßstab auf die Fläche, nicht in die Matrix
+        key += (round(sx, 3), round(sy, 3), ds)
         if key != self.key or self.surf is None:
-            self.surf = cr.get_target().create_similar_image(cairo.FORMAT_RGB24, max(1, int(W * sx)), max(1, int(H * sy)))
+            self.surf = cairo.ImageSurface(cairo.FORMAT_RGB24, max(1, round(W * sx * ds)), max(1, round(H * sy * ds)))
             c2 = cairo.Context(self.surf)
-            c2.scale(sx, sy)
+            c2.scale(sx * ds, sy * ds)
             render(c2, W, H, agents, 0.0, None, clock="", max_panels=max_panels, layer="static")
             self.key = key
             self.renders += 1
         cr.save()
-        cr.scale(1 / sx, 1 / sy)
+        cr.scale(1 / (sx * ds), 1 / (sy * ds))
         cr.set_source_surface(self.surf, 0, 0)
         cr.paint()
         cr.restore()

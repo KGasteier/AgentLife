@@ -18,7 +18,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 from gi.repository import GLib, Gtk  # noqa: E402
 
-from . import model, scene  # noqa: E402
+from . import model, scene, sketch  # noqa: E402
 
 APP_ID = "org.omarchy.agentscope"
 POLL_S = 0.5
@@ -84,6 +84,9 @@ class Scope(Gtk.ApplicationWindow):
         return GLib.SOURCE_CONTINUE
 
     def on_draw(self, _area, cr, w, h):
+        sc = self.area.get_scale_factor()
+        if sc != sketch.HINT_SCALE:
+            sketch.HINT_SCALE = float(sc)
         t0 = time.process_time()
         scene.render_cached(cr, w, h, self.agents, time.monotonic() - self.t0, self.hist, self.layer)
         if os.environ.get("AGENTSCOPE_DEBUG"):

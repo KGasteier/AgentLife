@@ -84,12 +84,36 @@ def _short_cwd(cwd: str) -> str:
     return "/".join(parts[-2:]) if len(parts) > 2 else cwd
 
 
+_NAME_CACHE: dict = {}
+
+
+def session_name_from_file(path: str | None) -> str | None:
+    """Letzter `session_info`-Name aus der Sitzungsdatei (der Name wird mit /name gesetzt, die Live-Datei kennt ihn evtl. nicht)."""
+    if not path or not os.path.isfile(path):
+        return None
+    mt = os.path.getmtime(path)
+    hit = _NAME_CACHE.get(path)
+    if hit and hit[0] == mt:
+        return hit[1]
+    name = None
+    for line in _tail_lines(path):
+        if '"session_info"' in line:
+            try:
+                n = json.loads(line).get("name")
+            except ValueError:
+                continue
+            if n:
+                name = n
+    _NAME_CACHE[path] = (mt, name)
+    return name
+
+
 def agent_from_state(s: dict) -> Agent:
     ctx = s.get("context") or {}
     tok = s.get("tokens") or {}
     comp = s.get("compaction") or {}
     le = s.get("lastError") or {}
-    title = s.get("sessionName") or _short_cwd(s.get("cwd") or "?")
+    title = s.get("sessionName") or session_name_from_file(s.get("sessionFile")) or _short_cwd(s.get("cwd") or "?")
     return Agent(
         key=f"pid:{s.get('pid')}",
         title=title,

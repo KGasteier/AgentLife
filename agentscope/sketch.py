@@ -75,6 +75,7 @@ def pick_font() -> str:
 
 _ADV: dict = {}
 _MASKS: dict = {}
+HINT_SCALE = 1.0  # echter Anzeigemaßstab; GTK4 liefert eine Aufzeichnungsfläche mit Maßstab 1, die erst später gerastert wird
 _NOMASK = bool(__import__("os").environ.get("AGENTSCOPE_NOMASK"))
 LEG = 30.0   # Ober-/Unterschenkel; Rumpf (Hüfte–Hals) = 48
 ARM = 24.0   # Ober-/Unterarm
@@ -303,22 +304,24 @@ class Pen:
         m = cr.get_matrix()
         if abs(m.xy) > 1e-6 or abs(m.yx) > 1e-6:
             return False
-        dx, dy = m.x0 + x * m.xx, m.y0 + y * m.yy
+        ds = cr.get_target().get_device_scale()[0] * HINT_SCALE
+        mxx, myy = m.xx * ds, m.yy * ds
+        dx, dy = (m.x0 + x * m.xx) * ds, (m.y0 + y * m.yy) * ds
         ix, iy = math.floor(dx), math.floor(dy)
         fx, fy = round((dx - ix) * 2) / 2, round((dy - iy) * 2) / 2
-        key = (s, size, bold, hand, round(jitter, 2), self._fkey[0], round(m.xx, 3), round(m.yy, 3), fx, fy, len(s))
+        key = (s, size, bold, hand, round(jitter, 2), self._fkey[0], round(mxx, 3), round(myy, 3), fx, fy, len(s))
         hit = _MASKS.get(key)
         if hit is None:
-            asc = size * 1.4 * m.yy
-            w_px = int(width * m.xx + size * 1.2 * m.xx + 8)
-            h_px = int(size * 2.2 * m.yy + 8)
+            asc = size * 1.4 * myy
+            w_px = int(width * mxx + size * 1.2 * mxx + 8)
+            h_px = int(size * 2.2 * myy + 8)
             if w_px > 4000 or h_px > 600:
                 return False
-            ox, oy = 4 + size * 0.3 * m.xx, asc + 4
+            ox, oy = 4 + size * 0.3 * mxx, asc + 4
             surf = cairo.ImageSurface(cairo.FORMAT_A8, w_px, h_px)
             c2 = cairo.Context(surf)
             c2.translate(ox + fx, oy + fy)
-            c2.scale(m.xx, m.yy)
+            c2.scale(mxx, myy)
             fo = cr.get_font_options()
             c2.set_font_options(fo)
             c2.select_font_face(self._fkey[0], cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
@@ -331,6 +334,7 @@ class Pen:
         surf, ox, oy = hit
         cr.save()
         cr.identity_matrix()
+        cr.scale(1 / ds, 1 / ds)
         cr.set_source_rgb(*color)
         cr.mask_surface(surf, ix - ox, iy - oy)
         cr.restore()

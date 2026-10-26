@@ -168,6 +168,34 @@ class SceneTest(unittest.TestCase):
         ink = lambda s: sum(1 for b in bytes(s.get_data())[::4] if b < 200)
         self.assertAlmostEqual(ink(part) / ink(full), 1.0, delta=0.08)
 
+    def test_regression_title_is_session_name(self):
+        """Panel-Titel = Sitzungsname von pi (auch wenn die Live-Datei ihn nicht kennt), sonst Verzeichnis."""
+        import json, tempfile
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "s.jsonl")
+            with open(f, "w") as fh:
+                fh.write(json.dumps({"type": "session_info", "name": "Alt"}) + "\n")
+                fh.write(json.dumps({"type": "session_info", "name": "Screensaver-Agent"}) + "\n")
+            st = {"pid": 1, "cwd": "/home/x/Work/proj", "sessionFile": f, "sessionName": None, "phase": "idle"}
+            self.assertEqual(model.agent_from_state(st).title, "Screensaver-Agent")
+            st["sessionName"] = "Direkt"
+            self.assertEqual(model.agent_from_state(st).title, "Direkt")
+            st.update(sessionName=None, sessionFile=None)
+            self.assertIn("proj", model.agent_from_state(st).title)
+
+    def test_regression_hidpi_text_stays_sharp(self):
+        """Bei Gerätemaßstab 2 (GTK HiDPI) müssen Textmasken und statische Ebene in Gerätepixeln entstehen, sonst unscharf."""
+        ag = model.demo_agents(14)[:1]
+        def tv(draw):
+            surf = cairo.ImageSurface(cairo.FORMAT_ARGB32, 1920, 1200)
+            surf.set_device_scale(2, 2)
+            draw(cairo.Context(surf))
+            d = bytes(surf.get_data())
+            return sum((d[i] - d[i + 4]) ** 2 for i in range(0, len(d) - 4, 12))  # Gradientenenergie = Kantenschärfe
+        sharp = tv(lambda c: scene.render(c, 960, 600, ag, 14, scene.History()))
+        cached = tv(lambda c: scene.render_cached(c, 960, 600, ag, 14, scene.History(), scene.StaticLayer()))
+        self.assertGreater(cached / sharp, 0.92)  # unscharf hochskaliert: ca. 0,76
+
     def test_ui_is_german(self):
         self.assertIn("wartet auf deinen nächsten Prompt", open(scene.__file__).read())
         self.assertNotIn("waiting for your", open(scene.__file__).read())

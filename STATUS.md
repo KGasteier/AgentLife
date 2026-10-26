@@ -1,5 +1,9 @@
 # STATUS
 
+## Stand 0.4.1
+- **Schrift wieder scharf:** GTK4 liefert eine Aufzeichnungsfläche mit Maßstab 1, die erst später auf Skalierung 2 gerastert wird. Statische Ebene und Textmasken wurden deshalb in halber Auflösung gebaut und hochskaliert. Jetzt Maßstab über `area.get_scale_factor()` (`sketch.HINT_SCALE`). Regressionstest `test_regression_hidpi_text_stays_sharp`.
+- **Panel-Titel = Sitzungsname** (`/name`): Live-Datei `sessionName`, sonst letzter `session_info` aus der Sitzungsdatei, sonst Verzeichnis. Ohne Namen zeigt das Panel das Verzeichnis (z. B. `~`).
+
 ## Stand 0.4.0
 - **Deutsche Oberfläche** (Texte in `scene.py`, Ereignisse in `core.ts`/`model.py`); Fachbegriffe (Token, Tools, Retry, Compaction) bleiben.
 - **Bug „wartet auf deinen nächsten Prompt“ trotz Aktivität:** Das Log-Fallback galt nach 20 s Stille als idle. pi schreibt aber erst nach fertiger Nachricht, ein langer Modellaufruf oder eine Kompaktierung sieht also wie Leerlauf aus. Jetzt `model.log_phase`: idle nur nach abgeschlossener Antwort; offene Anfrage gilt `BUSY_MAX_S` (10 min) als aktiv.
