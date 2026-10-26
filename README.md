@@ -14,6 +14,7 @@ Kontextfüllung, Kompaktierung und Fehlern.
 | Terminal | `agentscope` |
 | Demo ohne Agenten | `agentscope --demo` |
 | Fenster statt Vollbild | `agentscope --windowed` (nur `q`/`Esc` schließt) |
+| Sparsamer | `agentscope --fps 5` |
 | PNG-Vorschau | `python3 -m agentscope.snapshot out.png [--demo]` |
 
 Beenden im Vollbild: beliebige Taste, Mausklick oder Mausbewegung (erst nach 1 s).

@@ -38,6 +38,9 @@ def pick_font() -> str:
     return "Sans"
 
 
+_ADV: dict = {}
+
+
 def _seed(*k) -> int:
     return hash(tuple(round(v, 1) if isinstance(v, float) else v for v in k)) & 0xFFFFFFFF
 
@@ -176,11 +179,23 @@ class Pen:
     def _font(self, size, bold=False):
         self.cr.select_font_face(self.font, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
         self.cr.set_font_size(size)
+        self._fkey = (round(size, 2), bold)
+
+    def _adv(self, ch):
+        """Vorschub eines Zeichens; Cache über alle Frames (Schrift ändert sich nicht)."""
+        k = (self._fkey, ch)
+        v = _ADV.get(k)
+        if v is None:
+            v = self.cr.text_extents(ch).x_advance
+            if len(_ADV) > 20000:
+                _ADV.clear()
+            _ADV[k] = v
+        return v
 
     def text_width(self, s, size, bold=False, upper=True):
         s = s.upper() if upper else s
         self._font(size, bold)
-        return self.cr.text_extents(s).x_advance
+        return sum(self._adv(ch) for ch in s)
 
     def fit(self, s, size, maxw, bold=False, upper=True):
         """Kürzt s mit … auf maximale Breite."""
@@ -198,7 +213,7 @@ class Pen:
         s = s.upper() if upper else s
         cr = self.cr
         self._font(size, bold)
-        width = cr.text_extents(s).x_advance
+        width = sum(self._adv(ch) for ch in s)
         if align == "center":
             x -= width / 2
         elif align == "right":
@@ -207,7 +222,7 @@ class Pen:
         r = random.Random(_seed(len(s), round(x), round(y), self.boil))
         cx = x
         for ch in s:
-            adv = cr.text_extents(ch).x_advance
+            adv = self._adv(ch)
             if ch != " ":
                 cr.save()
                 cr.translate(cx + adv / 2, y + r.uniform(-0.9, 0.9) * jitter * size / 18)

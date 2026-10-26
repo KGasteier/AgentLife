@@ -104,7 +104,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="agentscope")
     ap.add_argument("--demo", action="store_true", help="synthetische Daten statt echter pi-Prozesse")
     ap.add_argument("--windowed", action="store_true", help="Fenster statt Vollbild, beenden nur mit q/Esc")
-    ap.add_argument("--fps", type=int, default=20)
+    ap.add_argument("--fps", type=int, default=10)
     a = ap.parse_args(argv)
     app = Gtk.Application(application_id=APP_ID)
     app.connect("activate", lambda ap_: Scope(ap_, a.demo, a.windowed, a.fps).present())
