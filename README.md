@@ -26,16 +26,20 @@ Jeder Agent ist ein Comic-Panel. Die Beschriftung links oben nennt den **Harness
 gekürzten **Skill- bzw. Sitzungsnamen** (z. B. `pi · vaultdev`); gibt es keinen Namen, steht dort
 eine kurze Sitzungskennung. Ein dezent getönter **Titelkasten** unterscheidet die Harnessse
 (pi = grau, Claude Code = warm, Codex = grün-blau) – die **Skizzenlinien selbst bleiben schwarz**.
-Links vom Modellnamen sitzt ein **pinkes Cartoon-Gehirn**; ein feiner pinker **Faden** führt von ihm
+Rechts vom Titelkasten, links vom **farbigen Modellnamen**, sitzt ein **pinkes Cartoon-Gehirn**
+(Blattwindungen, Sylvische Furche, Kleinhirn); ein feiner pinker **Faden** führt von seinem Stiel
 zum Kopf der Figur, wackelt in jeder Pose mit und verschwindet hinter Sprech- und Gedankenblasen.
-Ist **kein Modell** angewählt, ist die Verbindung getrennt: eine leblose Puppe hängt grau im Stuhl,
-der Faden baumelt abgerissen unter dem Gehirn („kein Signal“), und Tacho, Kontextglas, Kurve,
-Notizblock, Werkzeugbalken und Hoppla-Zähler zeigen keine Aktivität mehr.
+Der Modellname ist **blau**, wenn die Anbindung steht. Ist **kein Modell** angewählt, ist die
+Verbindung getrennt: eine leblose Puppe hängt grau im Stuhl, der Faden baumelt abgerissen unter dem
+Gehirn („kein Signal“), und Tacho, Kontextglas, Kurve, Notizblock, Werkzeugbalken und Hoppla-Zähler
+zeigen keine Aktivität mehr. Ist ein Modell **angewählt, aber pi kommt nicht durch** (falscher
+Schlüssel, Zeitüberschreitung), bleibt der Modellname **rot**, der Faden ist rot und zuckt mit
+Blitzstelle („unterbrochen“), und im Titel steht „keine Anbindung!“.
 
 | Bild | Bedeutung |
 |---|---|
 | Figur am Schreibtisch | Hauptagent – Pose = Phase (Denkblase mit dem Prompt, Tippen, Werkzeug, Schlafen) |
-| Pinkes Gehirn + Faden | Modell ist angewählt; der Faden verbindet Gehirn und Kopf (wackelt mit, liegt hinter den Blasen). Kein Modell = abgerissener Faden, leblose Puppe, keine Aktivitätsanzeigen |
+| Pinkes Gehirn + Faden | Modell ist angewählt; der Faden verbindet Gehirn und Kopf (wackelt mit, liegt hinter den Blasen). Kein Modell = abgerissener Faden, leblose Puppe, keine Aktivitätsanzeigen. Modell angewählt, aber keine Anbindung = roter, zuckender Faden mit Blitz („unterbrochen“) |
 | Sprechblasen | Memes im englischen Original („Live long and prosper.“, „This is fine.“) mit wechselnden Antworten |
 | Hammer auf `>_`-Kiste / Buch / Bleistift / Megafon / Lupe | Werkzeug `bash` / `read` / `edit`·`write` / `subagent` / sonstige |
 | Glas „Kontext“ mit Presse | Kontextfüllung; Presse drückt + „QUETSCH!“ = Kompaktierung läuft, „GEQUETSCHT!“ = gerade fertig |
@@ -76,9 +80,9 @@ o.window("org.omarchy.agentscope", { fullscreen = true })
 ```
 
 Abhängigkeiten: python3 mit GObject (GTK 4) und pycairo – auf Omarchy vorhanden.
-Schrift: Überschriften und Blasen in [Kalam](https://fonts.google.com/specimen/Kalam) (mitgeliefert unter
-`agentscope/fonts/`, SIL OFL 1.1, wird nur für den Prozess geladen). Fließtext nimmt `xkcd Script`/`Humor Sans`,
-falls installiert, sonst `URW Gothic`.
+Schrift: Überschriften und Blasen in **Steel City Comic** (mitgeliefert unter `agentscope/fonts/`, frei
+nutzbar mit Namensnennung an Steel City, wird nur für den Prozess geladen). Fließtext nimmt `xkcd Script`/
+`Humor Sans`, falls installiert, sonst `URW Gothic`.
 
 ## Tests
 

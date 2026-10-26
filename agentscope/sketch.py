@@ -26,13 +26,13 @@ PAPER = (1.0, 1.0, 1.0)
 PINK = (0.85, 0.25, 0.5)   # Gehirn und Verbindungsfaden zum Modell
 
 FONT_CANDIDATES = ["xkcd Script", "xkcd", "Humor Sans", "Comic Neue", "URW Gothic"]
-HAND_FONT = "Kalam"                     # Comic-Handschrift für Überschriften und Blasen (OFL, agentscope/fonts)
+HAND_FONT = "Steel City Comic"          # Comic-Handschrift für Überschriften und Blasen (agentscope/fonts)
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
 
 @lru_cache(maxsize=1)
 def register_fonts() -> bool:
-    """Mitgelieferte Schriften (Kalam) für diesen Prozess bei fontconfig anmelden.
+    """Mitgelieferte Schriften (Steel City Comic) für diesen Prozess bei fontconfig anmelden.
 
     Muss vor der ersten Schriftauswahl laufen; keine Installation ins System nötig."""
     try:
@@ -48,7 +48,7 @@ def register_fonts() -> bool:
 
 @lru_cache(maxsize=1)
 def hand_font() -> str:
-    """Kalam, falls registrierbar/installiert, sonst die Grundschrift."""
+    """Steel City Comic, falls registrierbar/installiert, sonst die Grundschrift."""
     register_fonts()
     try:
         fams = subprocess.run(["fc-list", ":", "family"], capture_output=True, text=True, timeout=5).stdout
@@ -73,6 +73,9 @@ def pick_font() -> str:
             return f
     return "Sans"
 
+
+# Oberlänge (Bruchteil der Schriftgröße) für die erste Textzeile je Handschriftfamilie
+_BASELINE_EM = {"Steel City Comic": 0.70, "Kalam": 0.78}
 
 _ADV: dict = {}
 _MASKS: dict = {}
@@ -306,8 +309,8 @@ class Pen:
             adv = self._adv(ch)
             dy = r.uniform(-0.9, 0.9) * jitter * size / 18
             if hand:
-                dy += r.uniform(-0.6, 0.6) * size / 18      # Grundlinien-Wackeln der Handschrift
-            out.append((ch, cx + adv / 2, y + dy, r.uniform(-0.05, 0.05) * jitter, adv))
+                dy += r.uniform(-1.5, 1.5) * size / 18      # Grundlinien-Wackeln der Handschrift
+            out.append((ch, cx + adv / 2, y + dy, r.uniform(-0.08, 0.08) * jitter, adv))
             cx += adv
         return out
 
@@ -366,10 +369,10 @@ class Pen:
             if ch != " ":
                 dy = r.uniform(-0.9, 0.9) * jitter * size / 18
                 if hand:
-                    dy += r.uniform(-0.6, 0.6) * size / 18     # Grundlinie der Handschrift wackelt leicht
+                    dy += r.uniform(-1.5, 1.5) * size / 18      # Grundlinie der Handschrift wackelt leicht
                 cr.save()
                 cr.translate(cx + adv / 2, y0 + dy)
-                cr.rotate(r.uniform(-0.05, 0.05) * jitter)
+                cr.rotate(r.uniform(-0.08, 0.08) * jitter)
                 cr.move_to(-adv / 2, 0)
                 cr.show_text(ch)
                 cr.restore()
@@ -409,7 +412,7 @@ class Pen:
     def draw_block(self, block, cx, cy, color=INK, bold=False, upper=False, hand=True, lh=1.2):
         """Zeichnet text_block()-Ergebnis zentriert um (cx, cy)."""
         sz, rows, _bw, bh = block
-        y0 = cy - bh / 2 + sz * 0.78       # Grundlinie der ersten Zeile (Kalam: Oberlänge ≈ 0,78 em)
+        y0 = cy - bh / 2 + sz * _BASELINE_EM.get(self.hand, 0.78)   # Oberlänge hängt von der Handschrift ab
         for i, row in enumerate(rows):
             self.text(row, cx, y0 + i * sz * lh, sz, color=color, align="center", bold=bold, upper=upper, hand=hand)
 
@@ -718,35 +721,62 @@ class Pen:
         if double:
             self.line(x + 3.6 * s, top + 5 * s, x + 10 * s, top + 11 * s, w=1.6 * s, color=color, amp=0)
 
-    def brain(self, x, y, s=1.0, color=PINK, fill=(1.0, 0.87, 0.93)):
-        """Cartoon-Gehirn (pink): gewellte Kuppe mit Windungen, Kleinhirn und Stiel. (x, y) = Mitte.
-
-        Gibt die Stielspitze (x, y) zurück, an der der Modell-Faden ansetzt."""
-        w, h = 12.0 * s, 8.5 * s
-        # Umriss: oben drei Windungsbuckel, unten eine runde Kuppe
+    def brain(self, x, y, s=1.0, color=PINK, fill=(1.0, 0.87, 0.93), seed=3):
+        """Cartoon-Gehirn (pink) nach den Vorlagen hirn1–3: Umriss mit leichten Lappenbuckeln,
+        dichte Blattwindungen (Gyri) über die ganze Fläche, Sylvische Furche, geriffeltes Kleinhirn
+        unten rechts und ein Stiel. (x, y) = Mitte; gibt die Stielspitze für den Modell-Faden zurück."""
+        rr = random.Random(seed)
+        W, H = 10.6 * s, 7.0 * s                      # halbe Breite/Höhe der Hirnkuppe
+        n = 140
         pts = []
-        for i in range(13):                                   # obere Kuppe
-            k = i / 12
-            pts.append((x - w + 2 * w * k,
-                        y - h * (0.55 + 0.5 * math.sin(math.pi * k)) - 1.7 * s * abs(math.sin(math.pi * 3 * k))))
-        for i in range(9):                                    # untere Rundung
-            k = i / 8
-            pts.append((x + w - 2 * w * k, y + h * (0.30 + 0.62 * math.sin(math.pi * k))))
+        for i in range(n):
+            a = 2 * math.pi * i / n
+            ct, st = math.cos(a), math.sin(a)
+            # breite Lappenbuckel außen + feine Riffelung: kein glattes Ei
+            bump = 1 + 0.028 * math.sin(3 * a - 0.5) + 0.016 * math.sin(7 * a + 1.4) + 0.010 * math.sin(11 * a + 0.6)
+            px = x + W * 0.94 * ct * bump
+            py = y + H * 0.94 * st * bump
+            if st > 0.10 and ct > 0.40:               # Kleinhirngrube unten rechts
+                py -= H * 0.30 * ((ct - 0.40) / 0.60) ** 1.2
+            pts.append((px, py))
         self.poly(pts, closed=True, w=1.9, color=color, fill=fill)
-        # Windungen: kurze, geschwungene Falten in beiden Hälften
-        for pts2 in (((x - 8 * s, y - 3 * s), (x - 4 * s, y - 7 * s), (x - 1 * s, y - 2 * s)),
-                     ((x - 8 * s, y + 3 * s), (x - 4 * s, y - 0.5 * s), (x - 0.5 * s, y + 3.5 * s)),
-                     ((x + 1.5 * s, y - 7 * s), (x + 6 * s, y - 7.5 * s), (x + 8.5 * s, y - 2 * s)),
-                     ((x + 1 * s, y + 3.5 * s), (x + 5 * s, y - 0.5 * s), (x + 8.5 * s, y + 3 * s))):
-            self.curve(list(pts2), w=1.1, color=color)
-        self.line(x, y - h * 1.02, x, y + h * 0.55, w=1.0, color=color, amp=0)   # Mittelfurche
-        # Kleinhirn: kleiner gerippter Knubbel unten rechts
-        self.circle(x + 6.5 * s, y + h * 0.85, 4.6 * s, w=1.5, color=color, fill=fill)
+        # Windungen als Blätter (zwei gespiegelte Bögen), der Oberfläche folgend nach innen versetzt
+        folds = ((-0.62, -0.48, 0.44, -16), (-0.16, -0.56, 0.46, 2), (0.32, -0.48, 0.40, -10),
+                 (-0.72, -0.06, 0.40, 6), (-0.26, -0.10, 0.50, -12), (0.24, -0.06, 0.46, 10), (0.66, 0.02, 0.34, -8),
+                 (-0.60, 0.44, 0.36, -6), (-0.14, 0.40, 0.44, 12), (0.30, 0.42, 0.38, -10),
+                 (-0.30, -0.80, 0.34, 8), (0.20, -0.78, 0.30, -6), (0.62, 0.42, 0.26, -12))
+        coarse = s < 2.0          # klein gezeichnet würde Detailreichtum zulaufen – dann größere Windungen
+        sel = folds[::2] if coarse else folds
+        fat = 1.55 if coarse else 1.35
+        for u, v, ln, ang in sel:
+            cx, cy = x + u * W * 0.74, y + v * H * 0.74
+            a = math.radians(ang)
+            hx, hy = math.cos(a) * ln * W / 2, math.sin(a) * ln * W / 2
+            self._leaf((cx - hx, cy - hy), (cx + hx, cy + hy), (0.34 if coarse else 0.30) * H, color, w=fat)
+        # Sylvische Furche: trennt den Schläfenlappen unten ab
+        self.curve([(x - W * 0.78, y + H * 0.02), (x - W * 0.30, y + H * 0.32),
+                    (x + W * 0.16, y + H * 0.24), (x + W * 0.50, y - H * 0.04)], w=1.1, color=color)
+        # Kleinhirn: geriffelter Knubbel unten rechts
+        cx2, cy2 = x + W * 0.56, y + H * 0.64
+        self.circle(cx2, cy2, 2.7 * s, w=1.4, color=color, fill=fill)
         for i in range(3):
-            self.line(x + 3.5 * s + i * 3 * s, y + h * 0.5, x + 4.2 * s + i * 3 * s, y + h * 1.25, w=0.9, color=color, amp=0)
-        # Stiel
-        self.line(x, y + h * 0.75, x, y + h * 1.35, w=2.0, color=color, amp=0)
-        return (x, y + h * 1.35)
+            yy = cy2 - 1.7 * s + i * 1.35 * s
+            self.line(cx2 - 2.5 * s, yy, cx2 + 2.5 * s, yy + 0.25 * s, w=0.85, color=color, amp=0)
+        self.line(cx2 - 0.9 * s, cy2 + 2.4 * s, cx2 - 1.5 * s, cy2 + 5.4 * s, w=2.0, color=color, amp=0)
+        return (x, cy2 + 5.4 * s)
+
+    def _leaf(self, p1, p2, bulge, color, w=1.35):
+        """Eine Gehirnwindung: zwei gespiegelte Bögen, an beiden Enden spitz (Blattform)."""
+        ax, ay = p1
+        bx, by = p2
+        dx, dy = bx - ax, by - ay
+        L = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / L, dx / L
+        for sgn in (1, -1):
+            o, o1 = bulge * sgn, bulge * 0.70 * sgn
+            self.curve([p1, (ax + dx * 0.26 + nx * o1, ay + dy * 0.26 + ny * o1),
+                        (ax + dx * 0.50 + nx * o, ay + dy * 0.50 + ny * o),
+                        (ax + dx * 0.74 + nx * o1, ay + dy * 0.74 + ny * o1), p2], w=w, color=color)
 
     def coin(self, x, y, r=7, color=INK, fill=(1.0, 0.93, 0.55)):
         self.circle(x, y, r, w=1.6, color=color, fill=fill)

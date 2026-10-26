@@ -26,9 +26,11 @@ pi-Prozess ──(Erweiterung extension/)──► $XDG_RUNTIME_DIR/agentscope/<
 - **Eigene Strichzeichnung** (deterministisches Wackeln, langsames „Boiling“) statt Bibliothek.
 - Tastenkürzel **SUPER+CTRL+ALT+A** (A = Agents; SUPER+CTRL+A war belegt).
 - Radial-Mesh-Layout: Vollbild über `radialmesh-fullscreen`, sonst Fensterregel.
-- **Schrift Kalam** (OFL, `agentscope/fonts/`) für Überschriften, Blasen und Ausrufe; wird pro Prozess
-  über `FcConfigAppFontAddFile` angemeldet – keine Systeminstallation. Fließtext bleibt in der
-  Grundschrift (xkcd Script/Humor Sans, sonst URW Gothic). `text(..., hand=None)`: fett ⇒ Kalam.
+- **Schrift Steel City Comic** (mitgeliefert in `agentscope/fonts/`, frei nutzbar mit Namensnennung) für
+  Überschriften, Blasen und Ausrufe; wird pro Prozess über `FcConfigAppFontAddFile` angemeldet – keine
+  Systeminstallation. Fließtext bleibt in der Grundschrift (xkcd Script/Humor Sans, sonst URW Gothic).
+  `text(..., hand=None)`: fett ⇒ Comicschrift. Die Grundlinie der Comicschrift sitzt bewusst leicht
+  unruhig (`Pen._laid_out`/`Pen._glyphs`), die Oberlänge je Familie steht in `_BASELINE_EM`.
 - **Blasentext**: `Pen.think`/`Pen.say` setzen Text über `text_block` (umbrechen → verkleinern → mit …
   kürzen) in das Innere der Ellipse; die Wolkenbögen liegen außerhalb. Test: `tests/test_drawing.py`.
 - **Posen**: Proportionen Rumpf 48, Beine 2×30, Arme 2×24. Hände/Füße werden per Zwei-Glied-IK an

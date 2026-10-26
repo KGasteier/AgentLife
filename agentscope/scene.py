@@ -246,9 +246,34 @@ def has_model(a: Agent) -> bool:
     return bool((getattr(a, "model", "") or "").strip())
 
 
+# Fehlerhinweise, die auf eine kaputte Anbindung deuten (nicht auf einen inhaltlichen Fehler)
+CONNECT_HINTS = ("timeout", "timed out", "econnrefused", "econnreset", "connect", "unreachable",
+                 "refused", "getaddrinfo", "socket", "network", "no route", "tls", "dns", "401", "403")
+
+
+def has_connect(a: Agent) -> bool:
+    """Steht die Anbindung zum angewählten Modell?
+
+    Ein Modell kann angewählt sein, ohne dass je ein Token fließt (falscher Schlüssel,
+    unerreichbarer Endpunkt, Zeitüberschreitung). Solange kein einziger Token ankam und
+    schon in Runde 0 ein Fehler auftrat, gilt die Anbindung als defekt."""
+    if not has_model(a):
+        return False
+    if a.tok_total > 0:
+        return True                                  # es flossen schon Tokens → Anbindung stand
+    return not (a.turn <= 0 and a.errors > 0)
+
+
+def model_ink(a: Agent):
+    """Farbe des Modellnamens: blau = verbunden, rot = angewählt aber keine Anbindung, grau = kein Modell."""
+    if not has_model(a):
+        return GRAY
+    return BLUE if has_connect(a) else RED
+
+
 def brain_pos(a: Agent, title_width: float):
-    """Position des pinken Gehirns links vom Modellnamen im Titelbereich (Mitte des Gehirns)."""
-    return (title_width + 46.0, 18.0)
+    """Position des pinken Gehirns rechts vom Titelkasten, links vom Modellnamen (Mitte des Gehirns)."""
+    return (title_width + 54.0, 18.0)
 
 
 def harness_ink(a: Agent):
@@ -291,16 +316,24 @@ def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
         p.line(20, FLOOR, 440, FLOOR, w=1.6, color=GRAY)
         # pinkes Gehirn links vom Modellnamen; der Faden zum Kopf folgt in der dynamischen Ebene
         bx, by = brain_pos(a, tw)
-        p.brain(bx, by, 1.25)
+        tip = p.brain(bx, by, 2.3)                 # Gehirn im Titelbereich; Stielspitze für den Faden
         p.brain_xy = (bx, by)
+        p.brain_tip = tip
     else:
         p.brain_xy = brain_pos(a, tw)
+        p.brain_tip = None
     if p.dy:
         phase_txt = PHASE_WORDS.get(a.phase, a.phase)
         if has_model(a):
-            p.text(f"{a.model} · Runde {a.turn} · {phase_txt}", tw + 66, 28, 15, color=GRAY, maxw=820 - tw - 66)
+            # Modellname farbig; ohne Anbindung zusätzlich deutlich als Defekt markiert
+            mw = p.text(a.model, tw + 82, 28, 15, color=model_ink(a), maxw=820 - tw - 82)
+            tail = f" · Runde {a.turn} · {phase_txt}"
+            if not has_connect(a):
+                tail = f" · {tail.strip(' ·')} · keine Anbindung!"
+            p.text(tail, tw + 82 + mw + 4, 28, 15, color=RED if not has_connect(a) else GRAY,
+                   maxw=820 - tw - 82 - mw - 4)
         else:
-            p.text("kein Modell · getrennt", tw + 66, 28, 15, color=PINK, maxw=820 - tw - 66)
+            p.text("kein Modell · getrennt", tw + 82, 28, 15, color=PINK, maxw=820 - tw - 82)
         if a.source == "log":
             p.text("(aus dem Sitzungslog)" if a.harness == "pi" else f"({a.harness}-Sitzungslog)",
                    830, 28, 12, color=GRAY, align="right")
@@ -417,28 +450,35 @@ def _thread_points(bx, by, tx, ty, t, n=22):
     return pts
 
 
-def _thread_behind(p: Pen, pts):
+def _thread_behind(p: Pen, pts, color=PINK):
     """Zeichnet den Faden, lässt ihn aber hinter Sprech-/Gedankenblasen verschwinden (keine Lücke am Kopf)."""
     run = [pts[0]]
     for q in pts[1:]:
         if p.bubbles_cover(q[0], q[1]):
             if len(run) > 1:
-                p.curve(run, w=0.7, color=PINK)
+                p.curve(run, w=0.7, color=color)
             run = []
         else:
             run.append(q)
     if len(run) > 1:
-        p.curve(run, w=0.7, color=PINK)
+        p.curve(run, w=0.7, color=color)
 
 
-def _model_thread(p: Pen, cx: float, t: float, broken: bool = False):
-    """Ganz feiner pinker Faden vom Gehirn (Titel) zum Kopf der Hauptfigur; wackelt luftig mit.
+def _model_thread(p: Pen, cx: float, t: float, broken: bool = False, bad: bool = False):
+    """Ganz feiner Faden vom Gehirn (Titel) zum Kopf der Hauptfigur; wackelt luftig mit.
 
     Liegt hinter Sprech-/Gedankenblasen und endet fest am Kopf (kein Spalt).
-    broken=True (kein Modell): der Faden ist oben abgerissen und baumelt schlaff herab."""
+    broken=True (kein Modell): der Faden ist oben abgerissen und baumelt schlaff herab.
+    bad=True (Modell angewählt, aber keine Anbindung): der Faden ist rot und zuckt,
+    mit einer Blitzstelle in der Mitte – „da kommt nichts durch“."""
     if not p.dy or not p.heads:
         return
-    bx, by = getattr(p, "brain_xy", (60.0, 18.0))
+    tip = getattr(p, "brain_tip", None)
+    if tip:
+        bx, by = tip                                  # exakt an der Stielspitze
+    else:
+        bx, by = getattr(p, "brain_xy", (60.0, 18.0))
+        by += 9
     hip, head = min(p.heads, key=lambda hh: abs(hh[0][0] - cx))   # Kopf der Hauptfigur (nächste Hüfte an cx)
     hx, hy = head
     tx, ty = hx - 2, hy - 15                              # Kopfoberkante, fest am Kreis
@@ -447,11 +487,27 @@ def _model_thread(p: Pen, cx: float, t: float, broken: bool = False):
         sway = 5.0 * math.sin(t * 1.3)
         mid = (bx + 3 * math.sin(t * 1.1), by + 22 + 2 * math.sin(t * 0.9))
         end = (bx + sway, by + 40 + 3 * math.sin(t * 1.7))
-        p.curve([(bx, by + 9), mid, end], w=0.7, color=PINK)
+        p.curve([(bx, by), mid, end], w=0.7, color=PINK)
         p.circle(end[0], end[1], 1.7, w=0.8, color=PINK, fill=PINK)
         p.text("kein Signal", end[0] + 6, end[1] + 4, 9, color=PINK, hand=True, upper=False, jitter=0.4)
         return
-    _thread_behind(p, _thread_points(bx, by + 9, tx, ty, t))
+    pts = _thread_points(bx, by, tx, ty, t)
+    if bad:
+        # rote, zuckende Leitung mit Blitzstelle: Anbindung angewählt, aber tot
+        jit = [((q[0] + 1.6 * math.sin(t * 21 + i * 2.3)), q[1]) for i, q in enumerate(pts)]
+        _thread_behind(p, jit, color=RED)
+        mi = max(1, len(pts) // 4)                 # Blitzstelle nahe am Gehirn, nicht hinter der Blase
+        mx, my = pts[mi]
+        bolt = [(mx - 5, my - 7), (mx + 2, my - 1), (mx - 3, my + 1), (mx + 5, my + 8)]
+        p.poly(bolt, closed=False, w=1.6, color=RED)
+        for k in range(3):
+            a = t * 3.0 + k * 2.1
+            p.line(mx + 6 * math.cos(a), my + 4 * math.sin(a), mx + 11 * math.cos(a), my + 8 * math.sin(a),
+                   w=1.0, color=RED, amp=0)
+        p.circle(tx, ty, 1.5, w=0.9, color=RED, fill=RED)
+        p.text("unterbrochen", tx + 10, ty - 6, 9, color=RED, hand=True, upper=False, jitter=0.4)
+        return
+    _thread_behind(p, pts)
     p.circle(tx, ty, 1.5, w=0.9, color=PINK, fill=PINK)   # fester Anschluss am Kopf
 
 
@@ -487,6 +543,11 @@ def draw_actor(p: Pen, a: Agent, t: float):
         draw_slumped(p, a, t, cx, seat_y, floor)
         _model_thread(p, cx, t, broken=True)
         return
+    if not has_connect(a):
+        # angewähltes Modell, aber keine Anbindung: normale Pose, dazu roter Defekt-Faden
+        _bad = True
+    else:
+        _bad = False
 
     from . import acts
     ctx = acts.context(cx, floor, desk_y, seat_y, hip, lap_x, keys)
@@ -550,7 +611,7 @@ def draw_actor(p: Pen, a: Agent, t: float):
     else:
         seated(p, hip, lean=4, hands=((cx + 24, hip[1] - 6), (cx + 30, hip[1] - 4)))
 
-    _model_thread(p, cx, t)
+    _model_thread(p, cx, t, bad=_bad)
 
     # Token-Münzen: der Laptop wirft gelbe Tokens in den Maul-Kopf; grün spuckt er sie wieder aus
     if a.rate > 0 and ph in ("streaming", "tool", "thinking"):

@@ -22,13 +22,27 @@ def pen():
 
 
 class FontTest(unittest.TestCase):
-    def test_kalam_is_bundled_and_resolves(self):
+    def test_steel_city_comic_is_bundled_and_resolves(self):
         self.assertTrue(sketch.register_fonts())
-        self.assertEqual(sketch.hand_font(), "Kalam")
+        self.assertEqual(sketch.hand_font(), "Steel City Comic")
         p = pen()
-        # Wenn Cairo Kalam nicht fände, fiele es auf die Grundschrift zurück → gleiche Breiten.
+        # Wenn Cairo die Comicschrift nicht fände, fiele es auf die Grundschrift zurück → gleiche Breiten.
         self.assertNotAlmostEqual(p.text_width("hello agents", 20, hand=True, upper=False),
                                   p.text_width("hello agents", 20, hand=False, upper=False), places=1)
+
+    def test_regression_comic_font_is_steel_city_comic(self):
+        """Wunsch 0.8.2b: die Comicschrift sollte Steel City Comic sein (mitgeliefert, nicht Kalam)."""
+        from pathlib import Path
+        self.assertTrue((sketch.FONT_DIR / "SteelCityComic-Regular.ttf").is_file(), "Steel-City-Datei fehlt")
+        self.assertEqual(sketch.HAND_FONT, "Steel City Comic")
+        self.assertIn("Steel City Comic", sketch._BASELINE_EM, "kein Oberlängen-Maß für die neue Schrift")
+
+    def test_regression_comic_font_wobbles_on_the_baseline(self):
+        """Wunsch 0.8.2b: die neue Comicschrift soll (wie die Unterzeile) leicht unruhig sitzen."""
+        p = pen()
+        p._font(26, False, True)     # Vorschub-Cache braucht eine gewählte Schrift
+        ys = [gy for _ch, _gx, gy, _rot, _adv in p._laid_out("Handschrift", 10, 100, 26, 1.0, True)]
+        self.assertGreater(max(ys) - min(ys), 1.2, "keine Grundlinien-Unruhe in der Comicschrift")
 
     def test_advance_cache_separates_fonts(self):
         p = pen()
@@ -668,6 +682,21 @@ class ModelThreadTest(unittest.TestCase):
         src = open(scene.__file__).read()
         self.assertIn("0 – kein Modell", src)
 
+    def _blue(self, surf, box=None):
+        """Zählt blaue Pixel (verbundenes Modell)."""
+        surf.flush()
+        buf, st = surf.get_data(), surf.get_stride()
+        x0, y0, x1, y1 = box or (0, 0, surf.get_width(), surf.get_height())
+        n = 0
+        for y in range(y0, y1):
+            row = y * st
+            for x in range(x0, x1):
+                i = row + 4 * x
+                r, g, b = buf[i + 2], buf[i + 1], buf[i]
+                if b > 140 and b - r > 50 and b - g > 40:
+                    n += 1
+        return n
+
     def test_thread_survives_walking_and_jumping_poses(self):
         from agentscope import model
         a = model.demo_agents(14.0)[0]
@@ -676,3 +705,108 @@ class ModelThreadTest(unittest.TestCase):
         p = Pen(cr)
         scene.render_panel(p, a, 3.0, None)
         self.assertGreater(self._pink(surf, (150, 30, 420, 340)), 20)
+
+
+class Wunsch082bTest(unittest.TestCase):
+    """Wunsch 0.8.2b: erkennbares Gehirn nach den Vorlagen, Hirn rechts vom Kasten, farbiger
+    Modellname und sichtbare kaputte Anbindung (Modell angewählt, aber pi kommt nicht durch)."""
+
+    def _blank(self, w=1000, h=560):
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, w, h)
+        cr = cairo.Context(surf)
+        cr.set_source_rgb(1, 1, 1)
+        cr.paint()
+        return surf, cr
+
+    def _count(self, surf, box, pred):
+        surf.flush()
+        buf, st = surf.get_data(), surf.get_stride()
+        x0, y0, x1, y1 = box
+        n = 0
+        for y in range(y0, y1):
+            row = y * st
+            for x in range(x0, x1):
+                i = row + 4 * x
+                if pred(buf[i + 2], buf[i + 1], buf[i]):
+                    n += 1
+        return n
+
+    def _blue(self, surf, box):
+        return self._count(surf, box, lambda r, g, b: b > 140 and b - r > 50 and b - g > 40)
+
+    def _red(self, surf, box):
+        return self._count(surf, box, lambda r, g, b: r > 150 and g < 110 and b < 110)
+
+    def _pink(self, surf, box):
+        return self._count(surf, box, lambda r, g, b: r > 170 and r - g > 55 and 60 < b < r)
+
+    def test_regression_brain_is_built_from_convolutions(self):
+        """Regression 0.8.2b: das alte Gehirn hatte nur vier Falten und wirkte wie ein Knäuel."""
+        calls = []
+        orig = sketch.Pen._leaf
+        sketch.Pen._leaf = lambda self, p1, p2, bulge, color, w=1.35: calls.append((p1, p2))
+        try:
+            p = pen()
+            p.brain(200, 100, 2.3)
+        finally:
+            sketch.Pen._leaf = orig
+        self.assertGreaterEqual(len(calls), 8, "zu wenige Windungen für ein erkennbares Gehirn")
+
+    def test_regression_brain_is_larger(self):
+        """Regression 0.8.2b: das Gehirn im Titel war zu klein, um als Gehirn zu lesen."""
+        surf, cr = self._blank(400, 160)
+        p = Pen(cr)
+        p.brain(200, 70, 2.3)
+        self.assertGreater(self._pink(surf, (120, 20, 280, 140)), 850, "Gehirn zu klein")
+
+    def test_regression_brain_sits_further_right_of_the_title_box(self):
+        """Regression 0.8.2b: das Gehirn sollte etwas weiter rechts vom Titelkasten sitzen."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        p = pen()
+        tw = p.text_width(scene.panel_title(a), 22, bold=True)
+        bx, by = scene.brain_pos(a, tw)
+        self.assertGreater(bx - tw, 46.0, "Gehirn sitzt nicht weiter rechts vom Kasten")
+        self.assertLess(by, 30.0)
+
+    def test_regression_model_name_is_coloured(self):
+        """Regression 0.8.2b: der Modellname im Titel war grau wie der Rest."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        a.phase, a.model, a.tok_total = "streaming", "claude-opus-5-5", 12345
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 3.0, None)
+        tw = p.text_width(scene.panel_title(a), 22, bold=True)
+        self.assertGreater(self._blue(surf, (int(tw) + 60, 10, 999, 42)), 25, "Modellname nicht farbig")
+
+    def test_regression_broken_connection_is_visible(self):
+        """Regression 0.8.2b: mimo war angewählt, aber pi bekam keine Verbindung – nicht erkennbar."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        a.model, a.tok_total, a.errors, a.turn, a.phase = "mimo-v2.6-flash-free", 0, 4, 0, "error"
+        a.last_error = "opencode timed out after 300000ms"
+        self.assertTrue(scene.has_model(a), "Modell gilt fälschlich als fehlend")
+        self.assertFalse(scene.has_connect(a), "kaputte Anbindung nicht erkannt")
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 3.0, None)
+        tw = p.text_width(scene.panel_title(a), 22, bold=True)
+        # Modellname rot, Hinweis „keine Anbindung!" im Titel, roter Faden zwischen Gehirn und Figur
+        self.assertGreater(self._red(surf, (int(tw) + 55, 10, 999, 42)), 25, "Modellname nicht als Defekt markiert")
+        self.assertGreater(self._red(surf, (int(tw) + 20, 40, int(tw) + 160, 250)), 12, "roter Defekt-Faden fehlt")
+        src = open(scene.__file__, encoding="utf-8").read()
+        self.assertIn("keine Anbindung!", src)
+        self.assertIn("unterbrochen", src)
+
+    def test_regression_connected_model_is_not_marked_broken(self):
+        """Gegenprobe: ein gesundes Modell darf nicht als kaputt gelten (Tokens flossen bereits)."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        a.model, a.tok_total, a.errors, a.turn = "claude-opus-5-5", 90000, 3, 12
+        self.assertTrue(scene.has_connect(a))
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 3.0, None)
+        tw = p.text_width(scene.panel_title(a), 22, bold=True)
+        self.assertEqual(self._red(surf, (int(tw) + 20, 40, int(tw) + 160, 250)), 0, "gesunder Faden ist rot")

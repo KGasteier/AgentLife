@@ -1,5 +1,13 @@
 # STATUS
 
+## Stand 0.8.2b
+- **Gehirn nach den Vorlagen `hirn1–3.jpg`:** `Pen.brain` ist neu gebaut – der Umriss hat breite Lappenbuckel und feine Riffelung (kein glattes Ei), die Fläche ist mit dichten **Blattwindungen** (`Pen._leaf`, zwei gespiegelte Bögen) gefüllt, dazu **Sylvische Furche**, geriffeltes **Kleinhirn** unten rechts und ein Stiel. Bei kleinen Größen werden größere Windungen gezeichnet (`coarse`), damit der Detailreichtum nicht zuläuft. `Pen.brain` gibt die Stielspitze zurück (`p.brain_tip`); im Titel `s=2.3`. Regressionstest `test_regression_brain_is_built_from_convolutions`.
+- **Gehirn weiter rechts:** `scene.brain_pos` → `(title_width + 54.0, 18.0)` (vorher `+46`). Regressionstest `test_regression_brain_sits_further_right_of_the_title_box`.
+- **Modellname farbig:** `scene.model_ink` färbt den Modellnamen im Titel – **blau** bei stehender Anbindung, **rot** wenn keine Anbindung besteht, grau ohne Modell. Regressionstest `test_regression_model_name_is_coloured`.
+- **Kaputte Anbindung sichtbar (mimo-Fall):** `scene.has_connect(a)` erkennt „Modell angewählt, aber nie ein Token geflossen und schon in Runde 0 ein Fehler“. Dann bleibt die normale Pose, aber der Modell-Faden ist **rot und zuckend** (`_model_thread(..., bad=True)`) mit Blitzstelle und „unterbrochen“ am Kopf; der Titelzusatz lautet rot „… · keine Anbindung!“. Regressionstest `test_regression_broken_connection_is_visible`, Gegenprobe `test_regression_connected_model_is_not_marked_broken`.
+- **Comicschrift `Steel City Comic`** (mitgeliefert als `agentscope/fonts/SteelCityComic-Regular.ttf`, frei nutzbar mit Namensnennung) statt Kalam; `sketch.HAND_FONT`. Das Grundlinien-Wackeln bleibt (`Pen._laid_out`/`Pen._glyphs`, jetzt ±1,5 px und ±0,08 rad), die Oberlänge der ersten Blasenzeile kommt aus `_BASELINE_EM` je Familie. Regressionstests `test_regression_comic_font_is_steel_city_comic`, `test_regression_comic_font_wobbles_on_the_baseline`.
+- Tests: **Python 78, Node 12**. Auf dem alten Stand `0e5c364` scheitern 8 der neuen Tests (5 failures, 3 errors).
+
 ## Stand 0.8.2a
 - **Faden liegt hinter den Blasen:** `Pen.bubbles` sammelt die Geometrie aller Sprech-/Gedankenblasen (auch der Terminal-Blase in `acts._terminal`), `Pen.bubbles_cover` prüft Punkte; `scene._thread_behind` zeichnet den Faden in Abschnitten und lässt ihn hinter Blasen verschwinden. Regressionstest `test_regression_thread_hides_behind_bubbles`.
 - **Faden endet fest am Kopf:** `scene._thread_points` hat an beiden Enden exakt 0 Ausschlag (Hüllkurve `sin(πk)`), der Anschlusspunkt am Kopf wird zusätzlich als kleiner Punkt gezeichnet – keine Lücken mehr. Regressionstest `test_regression_thread_has_exact_endpoints`.
