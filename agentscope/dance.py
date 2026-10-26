@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import math
 
-from .sketch import ARM, GRAY, INK, LEG, Pen
+from .sketch import ARM, BLUE, GRAY, INK, LEG, RED, Pen
 
 DANCES = ("disco", "gangnam", "twerk", "tap", "irish", "ymca", "floss", "moonwalk")
+FINALE = ("hopak", "robot", "cheer")      # Siegertänze des Hauptagenten auf dem Tisch (nicht in DANCES: Minion-Rotation)
+FINALE_ORDER = ("hopak", "robot", "hopak", "cheer")
 DANCE_SWITCH_S = 12.0     # jeder Minion wechselt so oft den Tanz
 
 
@@ -133,6 +135,56 @@ def pose(style: str, t: float, cx: float, base: float, s: float) -> dict:
         hand_r = (sh[0] + dx + 0.15 * A, sh[1] + 1.6 * A)
         feet = ((cx - 0.3 * L, base), (cx + 0.3 * L, base))
         lean = -4 * k
+    elif style == "hopak":                       # Kosakentanz: Hocke mit Beinwurf, dann Sprünge mit gespreizten Beinen
+        if t % 9.0 < 6.0:                        # Prisjadka: tief in der Hocke, abwechselnd ein Bein nach außen
+            b = t * 2.4
+            n, fr = int(b), b - int(b)
+            kick = math.sin(math.pi * fr)
+            sg = -1 if n % 2 == 0 else 1         # -1 = linkes Bein tritt aus
+            hx += -sg * 0.14 * L * kick
+            hy = base - L * (1.32 - 0.12 * kick)
+            sh = Pen.anchors(hx, hy, s=s)["sh"]
+            out = 0.38 * L + 1.2 * L * kick
+            feet = ((cx - (out if sg < 0 else 0.38 * L), base - (0.04 * L if sg < 0 else 0)),
+                    (cx + (out if sg > 0 else 0.38 * L), base - (0.04 * L if sg > 0 else 0)))
+            hand_l = (sh[0] + 0.55 * A, sh[1] + 0.7 * A)       # Arme vor der Brust verschränkt
+            hand_r = (sh[0] - 0.55 * A, sh[1] + 0.8 * A)
+        else:                                    # Sprünge: Beine im Spagat, Arme weit
+            air = max(0.0, math.sin(2 * math.pi * t * 1.0))
+            hy = base - (1.55 * L + 0.75 * L * air)
+            sh = Pen.anchors(hx, hy, s=s)["sh"]
+            sp = 0.38 * L + 0.6 * L * air
+            feet = ((cx - sp, base - 0.55 * L * air), (cx + sp, base - 0.55 * L * air))
+            hand_l = _mix((sh[0] + 0.55 * A, sh[1] + 0.7 * A), (sh[0] - 1.6 * A, sh[1] - 0.6 * A), air)
+            hand_r = _mix((sh[0] - 0.55 * A, sh[1] + 0.8 * A), (sh[0] + 1.6 * A, sh[1] - 0.6 * A), air)
+            if air > 0.85:
+                props.append(("shout", "HEJ!", (hx, hy - 2.6 * L)))
+        props.append(("papakha",))
+    elif style == "robot":                       # eckige Posen im Takt, kein Easing
+        b = t * 2.5
+        n, fr = int(b), b - int(b)
+        idx = (n * 3 + n // 4) % 4
+        offs = [((-1.7, 0.0), (1.7, 0.0)), ((-0.6, -1.7), (0.6, -1.7)), ((-1.7, -0.6), (1.2, 1.0)), ((-0.5, 0.9), (0.5, 0.9))][idx]
+        hy = base - 2 * L + 0.12 * L * (n % 2)
+        sh = Pen.anchors(hx, hy, s=s)["sh"]
+        hand_l = (sh[0] + offs[0][0] * A, sh[1] + offs[0][1] * A)
+        hand_r = (sh[0] + offs[1][0] * A, sh[1] + offs[1][1] * A)
+        up = 0.3 * L if fr < 0.45 else 0.0
+        feet = ((cx - 0.4 * L, base - (up if n % 2 == 0 else 0)), (cx + 0.4 * L, base - (up if n % 2 == 1 else 0)))
+        look = 18 if n % 2 else -18
+        if fr < 0.3:
+            props.append(("beep", (hx + 1.2 * L, hy - 2.0 * L)))
+    elif style == "cheer":                       # Hüpfer mit Faustpumpen und Konfetti
+        b = t * 1.8
+        air = max(0.0, math.sin(2 * math.pi * b))
+        side = int(b) % 2
+        hy = base - (1.85 * L + 0.4 * L * air)
+        sh = Pen.anchors(hx, hy, s=s)["sh"]
+        up, down = (sh[0] + 0.7 * A, sh[1] - 1.7 * A), (sh[0] + 0.5 * A, sh[1] + 0.9 * A)
+        up_l, down_l = (sh[0] - 0.7 * A, sh[1] - 1.7 * A), (sh[0] - 0.5 * A, sh[1] + 0.9 * A)
+        hand_l, hand_r = (up_l, down) if side == 0 else (down_l, up)
+        feet = ((cx - 0.4 * L, base - 0.45 * L * air), (cx + 0.4 * L, base - 0.45 * L * air))
+        props.append(("confetti", (hx, base)))
     else:                                        # moonwalk: gleitet rückwärts, Fersen wechseln
         flip, splay = False, False               # schaut nach links, gleitet nach rechts
         period = 2.4
@@ -190,6 +242,22 @@ def draw(p: Pen, style: str, t: float, cx: float, base: float, s: float, color=I
         elif kind == "letter":
             ch, (x, y) = pr[1], pr[2]
             p.text(ch, x, y, 18, align="center", bold=True, color=GRAY)
+        elif kind == "papakha":                  # Kosakenmütze (Pelz)
+            p.rect(head[0] - 11 * s, head[1] - 22 * s, 22 * s, 12 * s, lw=1.8, fill=GRAY)
+            p.hatch(head[0] - 11 * s, head[1] - 22 * s, 22 * s, 12 * s, spacing=4, color=INK, lw=0.9)
+        elif kind == "shout":
+            p.text(pr[1], pr[2][0], pr[2][1], 20, align="center", bold=True, color=RED)
+        elif kind == "beep":
+            p.text("bzzt", pr[1][0], pr[1][1], 14, align="center", color=GRAY, hand=True)
+        elif kind == "confetti":
+            cx0, by = pr[1]
+            for i in range(16):
+                k = (t * 0.45 + i * 0.0625) % 1
+                x = cx0 + 120 * math.sin(i * 12.9898)
+                y = by - 210 + k * 210
+                c = (RED, BLUE, INK)[i % 3]
+                a = t * 3 + i
+                p.line(x - 3 * math.cos(a), y - 3 * math.sin(a), x + 3 * math.cos(a), y + 3 * math.sin(a), w=2.4, color=c, amp=0)
         elif kind == "glove":
             x, y = pr[1]
             p.circle(x, y, 3.2 * s, w=1.4, fill=(1, 1, 1))

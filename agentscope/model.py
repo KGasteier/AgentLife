@@ -62,6 +62,12 @@ class Agent:
     children: list = field(default_factory=list)  # Live-Zustände der Subagent-Prozesse (dict)
     events: list = field(default_factory=list)
     updated: float = 0.0
+    idle_since: float | None = None  # Wanduhr: seit wann fertig (nur gesetzt, wenn der Übergang beobachtet wurde)
+
+    @property
+    def idle_for(self) -> float | None:
+        """Sekunden seit dem Ende der letzten Arbeit (None = unbekannt, z. B. schon beim Start untätig)."""
+        return None if self.idle_since is None else max(0.0, time.time() - self.idle_since)
 
 
 def pid_alive(pid: int) -> bool:
@@ -440,6 +446,8 @@ def demo_agents(t: float) -> list[Agent]:
         tools=[{"name": "bash", "label": "npm test", "started": 0}] if b_phase == "tool" else [], tool_counts={"bash": 9, "read": 14},
         events=[{"seq": 1, "kind": "tool", "text": "bash: npm test", "at": 0}], updated=time.time(),
     )
+    if a_phase == "idle":
+        a.idle_since = time.time() - (cyc - 9 * 4.8)
     c = Agent(key="demo:3", title="more-re", source="demo", phase="idle", prompt=DEMO_PROMPTS[2], model="claude-sonnet-5-5",
               ctx_tokens=20000, ctx_window=200000, ctx_percent=10, tok_total=120000, updated=time.time())
     return [a, b, c]

@@ -68,6 +68,8 @@ class History:
         self.marks: dict[str, deque] = {}
         self._compacts: dict[str, int] = {}
         self._needle: dict[str, tuple[float, float]] = {}
+        self._phase: dict[str, str] = {}
+        self._since: dict[str, float] = {}
 
     def needle(self, key: str, target: float, t: float, tau: float = 0.6) -> float:
         """Geglätteter Tachowert (exponentiell, Zeitkonstante tau): die Nadel schwingt statt zu springen."""
@@ -82,6 +84,15 @@ class History:
 
     def sample(self, agents: list[Agent], now: float):
         for a in agents:
+            # Übergang „arbeitet → fertig“ merken (löst den Siegestanz aus)
+            prev_ph = self._phase.get(a.key)
+            if a.phase == "idle" and prev_ph not in (None, "idle"):
+                self._since[a.key] = now
+            elif a.phase != "idle":
+                self._since.pop(a.key, None)
+            self._phase[a.key] = a.phase
+            if a.idle_since is None and a.key in self._since:
+                a.idle_since = self._since[a.key]
             d = self.data.setdefault(a.key, deque())
             m = self.marks.setdefault(a.key, deque())
             prev = self._compacts.get(a.key)
@@ -207,6 +218,11 @@ def render_empty(p: Pen, W, H, t, top, bottom):
     cr.save()
     cr.translate((W - PW * s) / 2, top + (H - top - bottom - PH * s) / 2)
     cr.scale(s, s)
+    from . import acts
+    if acts.empty_scene(p, t):
+        p.text("Es läuft gerade kein Agent.", PW / 2, 506, 22, align="center", bold=True)
+        cr.restore()
+        return
     # Hängematte zwischen zwei Bäumen
     p.line(80, FLOOR + 60, 920, FLOOR + 60, w=2)
     for tx in (260, 740):
@@ -239,6 +255,9 @@ def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
         if a.source == "log":
             p.text("(aus dem Sitzungslog)", 830, 28, 12, color=GRAY, align="right")
         draw_actor(p, a, t)
+        from . import acts
+        if a.phase not in ("retrying",) and not (a.phase == "idle" and (a.idle_for or 1e9) < acts.FINALE_S):
+            acts.ambient(p, a.key, t)
     draw_context_jar(p, a, t, 470, 140, 92, 190)
     draw_gauge(p, a, t, 690, 140, hist=hist)
     draw_chart(p, a, t, hist, 590, 250, 230, 130)
@@ -328,7 +347,17 @@ def draw_actor(p: Pen, a: Agent, t: float):
     if ph not in ("retrying",):
         p.laptop(lap_x, desk_y, 1.0, glow=glow)
 
-    if ph == "idle":
+    if ph == "error":
+        p.flame(lap_x + 8, desk_y - 30, t)
+        p.smoke(lap_x + 12, desk_y - 60, t)
+
+    from . import acts
+    cap = acts.draw(p, a, ph, kind, t, acts.context(cx, floor, desk_y, seat_y, hip, lap_x, keys))
+    if cap is not None:
+        caption(p, cap or default_caption(a, ph, tool), cx + 60, color=RED if ph == "error" else INK)
+        if ph == "tool" and len(a.tools) > 1:
+            p.text(f"+{len(a.tools) - 1} weitere Tools laufen", cx + 300, 80, 13, color=GRAY, align="center")
+    elif ph == "idle":
         # zurückgelehnt, Hände im Schoß, Kopf zur Seite gekippt
         h = seated(p, hip, lean=-14, look=-25, hands=((cx + 22, hip[1] - 6), (cx + 28, hip[1] - 4)))
         for i in range(3):
@@ -375,8 +404,6 @@ def draw_actor(p: Pen, a: Agent, t: float):
         say_at(p, h["head"], f"Versuch {r.get('attempt', '?')} von {r.get('max', '?')}…", dx=-120, w=220)
         caption(p, r.get("error") or "Anbieter sagt nein", 220)
     elif ph == "error":
-        p.flame(lap_x + 8, desk_y - 30, t)
-        p.smoke(lap_x + 12, desk_y - 60, t)
         jump = abs(math.sin(t * 5)) * 12
         h = standing(p, cx - 60, lift=jump, flip=False, la=(160 + 15 * sw, 200), ra=(-160 - 15 * sw, -200), eyes="dots")
         say_at(p, h["head"], "AAAAA!", w=170, h=70, size=24, color=RED, bold=True, dx=-10)
@@ -395,6 +422,13 @@ def draw_actor(p: Pen, a: Agent, t: float):
             y = y0 + (y1 - y0) * k - math.sin(k * math.pi) * 120
             p.coin(x, y, 7)
 
+
+def default_caption(a: Agent, ph: str, tool) -> str:
+    if ph == "tool" and tool:
+        return f"{tool['name']}: {tool['label']}"
+    return {"idle": "wartet auf deinen nächsten Prompt", "thinking": "denkt nach", "streaming": "streamt Tokens",
+            "compacting": "fasst alten Kontext zusammen", "error": a.last_error or "Fehler",
+            "retrying": (a.retry or {}).get("error") or "Anbieter sagt nein"}.get(ph, "")
 
 def caption(p: Pen, text: str, x: float, color=INK):
     p.text(text, x, FLOOR + 20, 14, align="center", color=color, maxw=400)

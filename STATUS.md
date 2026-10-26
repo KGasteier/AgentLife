@@ -45,3 +45,14 @@
 1. Laufende pi-Prozesse neu starten bzw. `/reload`, damit sie die Erweiterung laden; dann Kompaktierungsanzeige im Screensaver am echten Agenten prüfen.
 2. Optional: Auslösung über hypridle als echter Idle-Screensaver.
 3. Performance: Rest sind GTK-Software-Upload und dynamische Striche; falls nötig `--fps 5`.
+
+## Stand 0.5.0 – Abwechslung
+- Neues Modul `agentscope/acts.py`: je Phase 2–4 Varianten (Denken: auf und ab laufen / Geistesblitz / Jo-Jo; Tippen: Kaffee / Kopfhörer; Koffer packen; Fehler: Panik-Lauf / Feuerlöscher; Retry: Klingel / Türspion; bash: Terminal / Kurbel; read: Schriftrolle / vorlesen; edit: Steintafel / Tafel; subagent: Fahne / Glocke; sonstige: Fernglas).
+- `variant()` wählt deterministisch aus Agent-Key + Zeit (alle 10 s, nie zweimal dasselbe hintereinander, Panels verschieden).
+- **Siegestanz:** Wechsel „arbeitet → fertig" (`History.sample` setzt `Agent.idle_since`) → 15 s Tanz auf dem Tisch: Hopak (Kosaken-Hocke mit Beinwurf + Sprünge, Papakha), Roboter, Siegerhüpfer mit Konfetti (`dance.py`).
+- **Leerlauf:** 8 Szenen im 14-s-Takt (Zeitung, Kaffee, Jonglieren, Pflanze gießen, Papierflieger, Besuch eines blauen Kollegen mit Dialog, Vogel auf dem Tisch, Yoga).
+- **Umgebung:** Katze, Vogel, Ballon, Schnecke ziehen zeitversetzt je Panel durchs Bild.
+- **Leeres Bild:** Hängematte, Angeln, Lagerfeuer, Sternegucken im Wechsel.
+- Alles liegt auf der dynamischen Ebene; Rechenzeit pro Frame im Rauschen der VM unverändert.
+- Tests: Python 40 (neu `VarietyTest`), Node unverändert.
+- Offen: Siegestanz erst nach beobachtetem Übergang (nicht bei Start im Leerlauf); Log-Fallback erkennt ihn über die History ebenfalls.

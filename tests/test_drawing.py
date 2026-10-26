@@ -185,5 +185,91 @@ class MotionTest(unittest.TestCase):
         self.assertNotEqual(dance.pick("worker", 0, 0), dance.pick("worker", 0, dance.DANCE_SWITCH_S))
 
 
+class VarietyTest(unittest.TestCase):
+    """0.5.0: mehr Abwechslung – Varianten, Siegestanz, Leerlauf-Szenen."""
+
+    def setUp(self):
+        from agentscope import acts
+        self.acts = acts
+        acts.FORCE.clear()
+
+    def test_variants_change_over_time_and_never_repeat_directly(self):
+        a = self.acts
+        for name, n in (("thinking", 4), ("idle", 9)):
+            seq = [a.variant("k", name, i * a.VARIANT_S + 1, n) for i in range(60)]
+            self.assertGreaterEqual(len(set(seq)), n - 1, name)
+            self.assertTrue(all(x != y for x, y in zip(seq, seq[1:])), name)
+        self.assertEqual(a.variant("k", "x", 33.0, 4), a.variant("k", "x", 33.0, 4))      # deterministisch
+        self.assertNotEqual([a.variant("a", "idle", i * 14.0, 9) for i in range(9)],
+                            [a.variant("b", "idle", i * 14.0, 9) for i in range(9)])        # Panels verschieden
+
+    def test_every_variant_renders_in_every_phase(self):
+        from agentscope import model
+        a = self.acts
+        base = model.demo_agents(14.0)[0]
+        cases = [(ph, None) for ph in ("thinking", "streaming", "compacting", "error", "retrying", "idle")]
+        cases += [("tool", n) for n in ("bash", "read", "edit", "subagent", "grep")]
+        for ph, tool in cases:
+            base.phase = ph
+            base.tools = [{"name": tool, "label": "x", "started": 0}] if tool else []
+            base.retry = {"attempt": 1, "max": 3, "error": "529"}
+            base.idle_since = None
+            for v in range(10):
+                a.FORCE["variant"] = v
+                for t in (0.5, 3.3, 9.1):
+                    scene.draw_actor(pen(), base, t)
+        a.FORCE.clear()
+
+    def test_finished_agent_dances_on_table_then_returns_to_idle_scenes(self):
+        import time
+        from agentscope import model
+        a = self.acts
+        ag = model.demo_agents(14.0)[0]
+        ag.phase, ag.tools = "idle", []
+        ag.idle_since = time.time() - 3
+        for i in range(4):
+            ag.turn = i
+            self.assertIn(a.finale_style(ag), dance_mod().FINALE)
+        self.assertEqual({a.finale_style(type("A", (), {"key": "x", "turn": i})()) for i in range(4)}, set(dance_mod().FINALE))
+        ag.idle_since = time.time() - a.FINALE_S - 1
+
+    def test_history_detects_work_to_idle_transition(self):
+        import time
+        from agentscope import model
+        h = scene.History()
+        ag = model.demo_agents(14.0)[0]
+        ag.phase, ag.idle_since = "streaming", None
+        h.sample([ag], time.time())
+        self.assertIsNone(ag.idle_for)
+        ag.phase = "idle"
+        h.sample([ag], time.time())
+        self.assertLess(ag.idle_for, 1.0)                       # frisch fertig → tanzt
+        ag2 = model.demo_agents(14.0)[2]                         # schon beim Start untätig
+        ag2.idle_since = None
+        h.sample([ag2], time.time())
+        self.assertIsNone(ag2.idle_for)
+
+    def test_hopak_squats_and_kicks(self):
+        from agentscope import dance
+        lows = [dance.pose("hopak", i * 0.05, 100, 300, 0.85)["hip"][1] for i in range(180)]
+        self.assertGreater(max(lows) - min(lows), 12)            # Hocke ↔ Sprung
+        self.assertGreater(max(lows), 300 - 1.5 * LEG * 0.85)    # tief in der Hocke
+        xs = [dance.pose("hopak", i * 0.05, 100, 300, 0.85)["feet"][0][0] for i in range(120)]
+        self.assertGreater(max(xs) - min(xs), 20)                # Bein wird ausgestreckt
+
+    def test_empty_scenes_rotate_and_render(self):
+        a = self.acts
+        seen = {a.variant("leer", "szene", i * a.EMPTY_SLOT_S + 1, a.EMPTY_SCENES, a.EMPTY_SLOT_S) for i in range(30)}
+        self.assertEqual(seen, set(range(a.EMPTY_SCENES)))
+        for v in range(a.EMPTY_SCENES):
+            a.FORCE["variant"] = v
+            surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
+            scene.render(cairo.Context(surf), 1000, 560, [], 3.0, None)
+        a.FORCE.clear()
+
+def dance_mod():
+    from agentscope import dance
+    return dance
+
 if __name__ == "__main__":
     unittest.main()
