@@ -49,6 +49,7 @@ Blitzstelle („unterbrochen“), und im Titel steht „keine Anbindung!“.
 | Brennender Laptop, „AAAAA!“ | Fehler in diesem Moment; Figur klopft an Tür „API“ = automatischer Retry |
 | „Hoppla-Zähler“ (Strichliste) | Anzahl Fehler (Tool-Fehler, Modellfehler, fehlgeschlagene Kompaktierung) |
 | Notizblock „LAB NOTES“ | letzte Ereignisse (rot = Fehler, blau = Kompaktierung/Delegation) |
+| Leerlauf-Szene | wartet der Agent, wechselt das Panel alle 14 s durch **42 Szenen** – Slapstick (Chaplin, Wutanfall, Bankeinbruch), Tech-Persönlichkeiten (Elon, Sam, Zuckerberg, Trump, YouTuber, Gamer) und 24 weitere Rollen (Barista, Dirigent, Astronaut, Ninja, Vampir …); Reihenfolge je Lauf neu |
 
 ## Datenquellen
 

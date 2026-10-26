@@ -781,19 +781,15 @@ class Pen:
         if double:
             self.line(x + 3.6 * s, top + 5 * s, x + 10 * s, top + 11 * s, w=1.6 * s, color=color, amp=0)
 
-    def _wrinkle(self, cx, cy, rx, ry, seed, rot=0.0, n=11, irr=0.13):
-        """Eine Gehirnwindung: leicht unregelmäßige Blattform, an den Enden spitz (Gyri)."""
-        cr = self.cr
-        cr.new_path()
-        for i in range(n + 1):
-            a = 2 * math.pi * i / n
-            k = 1 + irr * math.sin(3 * a + seed * 0.7) + 0.06 * math.sin(5 * a + seed)
-            px = rx * k * math.cos(a)
-            py = ry * k * math.sin(a) * (1 - 0.25 * abs(math.cos(a)))
-            qx = px * math.cos(rot) - py * math.sin(rot) + cx
-            qy = px * math.sin(rot) + py * math.cos(rot) + cy
-            (cr.move_to if i == 0 else cr.line_to)(qx, qy)
-        cr.close_path()
+    def _fold_arc(self, x, y, W, H, r, a0, a1, seed, w, color=PINK):
+        """Offener Windungsbogen (Gyrus): Teil eines Ringes mit leichter Welligkeit."""
+        m = 40
+        pts = []
+        for i in range(m + 1):
+            a = a0 + (a1 - a0) * i / m
+            rr = r + 0.10 * r * (math.sin(4.3 * a + seed) * 0.6 + math.sin(7.1 * a + seed * 1.4) * 0.4)
+            pts.append((x + W * math.cos(a) * rr, y + H * math.sin(a) * rr * 0.92))
+        self.curve(pts, w=w, color=color)
 
     def _blob(self, cx, cy, rx, ry, seed, rot=0.0, n=12):
         """Rundlicher Knubbel (Kleinhirn) mit leicht welligem Rand."""
@@ -808,80 +804,74 @@ class Pen:
         cr.close_path()
 
     def _cerebrum(self, x, y, W, H):
-        """Großhirnkontur: runde Kuppe mit Lappenbuckeln, unterem Einschnitt für das Kleinhirn."""
+        """Grosshirnkontur: runde Kuppe mit sanften Lappenbuckeln, unterem Einschnitt fuers Kleinhirn."""
         cr = self.cr
         cr.new_path()
-        n = 240
+        n = 360
         for i in range(n + 1):
             a = 2 * math.pi * i / n
             ct, st = math.cos(a), math.sin(a)
-            bump = 1 + 0.030 * math.sin(6 * a + 0.5) + 0.016 * math.sin(11 * a + 1.9)
+            bump = (1 + 0.048 * math.sin(9 * a + 0.4)
+                    + 0.022 * math.sin(27 * a + 1.9) + 0.010 * math.sin(63 * a + 3.0))
             px = x + W * ct * bump
             py = y + H * st * bump
             px += W * 0.05 * (-ct)                       # vorn (links) etwas voller
-            if ct > 0.20 and st < -0.05:                 # unten rechts ausschneiden fürs Kleinhirn
-                k = (ct - 0.20) / 0.80 * ((-st - 0.05) / 0.95)
-                px -= W * 0.24 * k
+            if ct > 0.12 and st < -0.02:                 # unten rechts ausschneiden fuers Kleinhirn
+                k = (ct - 0.12) / 0.88 * ((-st - 0.02) / 0.98)
+                px -= W * 0.26 * k
+                py += H * 0.04 * k
             (cr.move_to if i == 0 else cr.line_to)(px, py)
         cr.close_path()
 
-    def brain(self, x, y, s=1.0, color=PINK, fill=(1.0, 0.87, 0.93), seed=3):
-        """Cartoon-Gehirn (pink) nahe den Vorlagen hirn1–3.
+    def brain(self, x, y, s=1.0, color=PINK, fill=(1.0, 0.88, 0.93), seed=3):
+        """Cartoon-Gehirn (pink) nahe den Vorlagen hirn1-3.
 
-        Seitenansicht: Großhirn mit dicht an dicht liegenden Windungen (Gyri), geriffeltes Kleinhirn
-        und Stiel unten rechts. (x, y) = Mitte; gibt die Stielspitze für den Modell-Faden zurück."""
-        coarse = s < 3.0                    # im Titel so klein, dass mehr Zellen nur Matsch ergäben
-        W, H = 9.6 * s, 7.4 * s
+        Seitenansicht: Grosshirn aus wenigen dicken, in Boegen aufgeteilten Windungen (Gyri),
+        geriffeltes Kleinhirn und Stiel unten rechts. (x, y) = Mitte; gibt die Stielspitze
+        fuer den Modell-Faden zurueck."""
+        coarse = s < 3.0                    # im Titel so klein, dass mehr Linien nur Matsch ergaeben
+        W, H = 9.4 * s, 6.9 * s
         cr = self.cr
-        # Kleinhirn zuerst (liegt unter dem Großhirn)
-        cx2, cy2 = x + W * 0.66, y + H * 0.74
-        self._blob(cx2, cy2, 3.4 * s, 2.4 * s, seed + 9, rot=0.28)
+        w = max(1.0, 0.42 * s)
+        # Kleinhirn zuerst (liegt unter dem Grosshirn)
+        cx2, cy2 = x + W * 0.58, y + H * 0.70
+        self._blob(cx2, cy2, 3.0 * s, 2.4 * s, seed + 9, rot=0.28)
         cr.set_source_rgb(*self.rgb(fill))
         cr.fill_preserve()
-        cr.set_line_width(1.6)
+        cr.set_line_width(w * 1.1)
         cr.set_source_rgb(*self.rgb(color))
         cr.stroke()
         cr.save()
-        self._blob(cx2, cy2, 3.4 * s, 2.4 * s, seed + 9, rot=0.28)
+        self._blob(cx2, cy2, 3.0 * s, 2.4 * s, seed + 9, rot=0.28)
         cr.clip()
         for i in range(5):
             t = -1 + i * 0.5
-            self.line(cx2 - 3.4 * s + 0.5 * s * t, cy2 - 0.6 * s + t * 1.0 * s,
-                      cx2 + 3.2 * s + 0.5 * s * t, cy2 - 1.6 * s + t * 1.0 * s, w=0.9, color=color, amp=0)
+            self.line(cx2 - 3.0 * s + 0.4 * s * t, cy2 + 0.5 * s + t * 0.85 * s,
+                      cx2 + 2.8 * s + 0.4 * s * t, cy2 - 1.0 * s + t * 0.85 * s, w=w * 0.55, color=color, amp=0)
         cr.restore()
         stemx, stemy = cx2 + 0.2 * s, cy2 + 1.7 * s
-        self.line(stemx, stemy, stemx - 0.8 * s, stemy + 4.2 * s, w=2.2, color=color, amp=0)
-        # Großhirn
+        self.line(stemx, stemy, stemx - 0.8 * s, stemy + 4.2 * s, w=w * 1.3, color=color, amp=0)
+        # Grosshirn
         self._cerebrum(x, y, W, H)
         cr.set_source_rgb(*self.rgb(fill))
         cr.fill_preserve()
-        cr.set_line_width(1.9)
+        cr.set_line_width(w * 1.25)
         cr.set_source_rgb(*self.rgb(color))
         cr.stroke()
         cr.save()
         self._cerebrum(x, y, W, H)
         cr.clip()
-        layout = []
-        ring1 = 13 if coarse else 16
-        ring2 = 8 if coarse else 11
-        ring3 = 3 if coarse else 5
-        for k in range(ring1):
-            a = 2 * math.pi * k / ring1
-            layout.append((math.cos(a) * 0.80, math.sin(a) * 0.72, math.degrees(a) + 90))
-        for k in range(ring2):
-            a = 2 * math.pi * k / ring2 + 0.4
-            layout.append((math.cos(a) * 0.52, math.sin(a) * 0.46, math.degrees(a)))
-        for k in range(ring3):
-            a = 2 * math.pi * k / ring3 + 1.1
-            layout.append((math.cos(a) * 0.22, math.sin(a) * 0.20, math.degrees(a) + 90))
-        for i, (u, v, ang) in enumerate(layout):
-            self._wrinkle(x + u * W, y + v * H, 0.165 * W, 0.15 * H,
-                          seed=seed * 7 + i * 3, rot=math.radians(ang), n=11)
-            cr.set_source_rgb(*self.rgb(fill))
-            cr.fill_preserve()
-            cr.set_line_width(1.05)
-            cr.set_source_rgb(*self.rgb(color))
-            cr.stroke()
+        # wenige dicke Windungsboegen; jeder Ring in 2-3 Stuecke mit Luecken (Gyri)
+        rings = ([(0.80, 2), (0.52, 3), (0.24, 2)] if coarse
+                 else [(0.86, 2), (0.66, 3), (0.46, 2), (0.26, 3)])
+        for ri, (r, pieces) in enumerate(rings):
+            for q in range(pieces):
+                a0 = 2 * math.pi * q / pieces + seed * 0.4 + ri * 0.9
+                a1 = a0 + 2 * math.pi / pieces * (0.72 + 0.10 * (q % 2))
+                self._fold_arc(x, y, W, H, r, a0, a1, seed + ri * 1.7 + q * 3.1, w, color=color)
+        # Sylvische Furche
+        self.curve([(x - W * 0.78, y + H * 0.10), (x - W * 0.28, y + H * 0.36),
+                    (x + W * 0.20, y + H * 0.28), (x + W * 0.54, y - H * 0.04)], w=w * 1.15, color=color)
         cr.restore()
         return (stemx - 0.8 * s, stemy + 4.2 * s)
 

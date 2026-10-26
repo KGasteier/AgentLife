@@ -599,6 +599,35 @@ class Wunsch080Test(unittest.TestCase):
         self.assertTrue({"idle_67", "idle_thisisfine", "idle_distracted"} <= names)
         self.assertTrue({"idle_planking", "idle_mannequin", "idle_icebucket"} <= names)
 
+    def test_regression_roles_083_scenes_registered(self):
+        """Wunsch 0.8.3: mindestens 25 zusaetzliche Rollen-/Slapstick-Szenen, alle im Leerlauf-Roulette."""
+        from agentscope import acts
+        self.assertGreaterEqual(len(acts.ROLES_083), 25)
+        names = {f.__name__ for f in acts.ACTS["idle"] if f}
+        for f in acts.ROLES_083:
+            self.assertIn(f.__name__, names)
+        need = {"idle_chaplin", "idle_office_rage", "idle_heist", "idle_elon", "idle_sam", "idle_zuck",
+                "idle_trump", "idle_youtube", "idle_gamer"}
+        self.assertTrue(need <= {f.__name__ for f in acts.ROLES_083}, need)
+
+    def test_regression_roles_083_every_scene_renders_without_error(self):
+        """Regression 0.8.3: jede neue Szene rendert bei mehreren Zeitpunkten ohne Ausnahme."""
+        import time
+        from agentscope import acts, model
+        ag = model.demo_agents(14.0)[0]
+        ag.phase, ag.tools = "idle", []
+        ag.idle_since = time.time() - 100
+        cx, fl = scene.ACTOR_X, scene.FLOOR
+        dk, st = fl - scene.DESK_H, fl - scene.SEAT_H
+        c = acts.context(cx, fl, dk, st, (cx, st - 3), cx + 70, (cx + 48, dk - 3))
+        for f in acts.ROLES_083:
+            for t in (0.5, 3.3, 6.0, 9.1, 12.0):
+                surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
+                cr = cairo.Context(surf)
+                cr.set_source_rgb(1, 1, 1)
+                cr.paint()
+                f(Pen(cr), ag, t, c)
+
     def test_default_fps_is_eight(self):
         import inspect
         from agentscope import app
@@ -691,7 +720,7 @@ class ModelThreadTest(unittest.TestCase):
         surf, cr = self._blank()
         p = Pen(cr)
         scene.render_panel(p, a, 3.0, None)
-        _, head = min(p.heads, key=lambda hh: abs(hh[0][0] - scene.ACTOR_X))
+        _, head = scene._host_head(p, scene.ACTOR_X)
         bx, by = p.brain_xy
         pts = scene._thread_points(bx, by + 9, head[0] - 2, head[1] - 15, 3.0)
         self.assertLessEqual(abs(pts[0][0] - bx), 0.6, "Faden startet nicht an der Stielspitze")
@@ -700,6 +729,25 @@ class ModelThreadTest(unittest.TestCase):
         # der Anschlusspunkt am Kopf wird immer gezeichnet, auch wenn eine Blase darüber liegt
         self.assertGreater(self._pink(surf, (int(head[0]) - 6, int(head[1]) - 20, int(head[0]) + 4, int(head[1]) - 8)), 0,
                            "kein fester Anschluss am Kopf")
+
+    def test_regression_thread_never_attaches_below_the_floor(self):
+        """Regression 0.8.3: der Faden konnte an eine Figur im unteren Streifen andocken
+        (Minion/Umgebungsfigur, y > FLOOR) und lief dann ins Leere. Der Kopf wird jetzt
+        nur oberhalb des Bodens gewaehlt."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        a.phase, a.model = "thinking", "claude-opus-5-5"
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 3.0, None)
+        hip, head = scene._host_head(p, scene.ACTOR_X)
+        self.assertLess(head[1], scene.FLOOR, "Faden dockt an Figur unter dem Boden an")
+        # ein Kopf im unteren Streifen direkt an cx darf den richtigen Kopf nicht verdraengen
+        below = ((scene.ACTOR_X, scene.FLOOR + 90), (scene.ACTOR_X, scene.FLOOR + 86))
+        p.heads.append(below)
+        hip2, head2 = scene._host_head(p, scene.ACTOR_X)
+        self.assertLess(head2[1], scene.FLOOR, "Figur unter dem Boden verdraengt den Hauptkopf")
+        self.assertNotEqual(head2, below[1])
 
     def test_regression_thread_hides_behind_bubbles(self):
         """Regression 0.8.2a: der Faden lief sichtbar über die Gedankenblase."""
@@ -724,7 +772,7 @@ class ModelThreadTest(unittest.TestCase):
         self.assertGreater(tip[0], 150.0, "Stiel sitzt nicht mehr rechts der Gehirnmitte")
         self.assertLess(tip[0], 150.0 + 9.6 * 1.25, "Stielspitze liegt außerhalb des Gehirns")
         self.assertGreater(tip[1], 60 + 8 * 1.25, "Stielspitze fehlt")
-        self.assertGreater(self._pink(surf, (110, 20, 200, 110)), 300, "Gehirn zu klein/kaum sichtbar")
+        self.assertGreater(self._pink(surf, (110, 20, 200, 110)), 200, "Gehirn zu klein/kaum sichtbar")
 
     def test_regression_no_model_shows_no_activity(self):
         """Regression 0.8.2a: ohne Modell zeigten Hoppla-Zähler, Balken und Tacho weiter Aktivität."""
@@ -804,18 +852,21 @@ class Wunsch082bTest(unittest.TestCase):
         return self._count(surf, box, lambda r, g, b: r > 150 and 60 < g < 160 and b < 90)
 
     def test_regression_brain_is_built_from_convolutions(self):
-        """Regression 0.8.2b/0.8.2c: das alte Gehirn hatte nur vier Falten und wirkte wie ein Knäuel.
-        Muss nach 0.8.2c deutlich mehr Windungen haben (Vorlage hirn1–3) und sich ans Kleinhirn halten."""
+        """Regression 0.8.2b/0.8.2c/0.8.3: das alte Gehirn war ein Mosaik aus geschlossenen Zellen
+        und las sich wie ein Korb. Jetzt wenige dicke, offene Windungsbögen (Gyri) mit Lücken."""
         calls = []
-        orig = sketch.Pen._wrinkle
-        sketch.Pen._wrinkle = lambda self, cx, cy, rx, ry, seed, rot=0.0, n=11, irr=0.13: calls.append((cx, cy))
+        orig = sketch.Pen._fold_arc
+        sketch.Pen._fold_arc = lambda self, x, y, W, H, r, a0, a1, seed, w, color=sketch.PINK: calls.append((a0, a1))
         try:
             p = pen()
-            p.brain(200, 100, 2.3)
+            p.brain(200, 100, 4.0)
         finally:
-            sketch.Pen._wrinkle = orig
-        self.assertGreaterEqual(len(calls), 24, "zu wenige Windungen für ein erkennbares Gehirn")
+            sketch.Pen._fold_arc = orig
+        self.assertGreaterEqual(len(calls), 9, "zu wenige Windungen für ein erkennbares Gehirn")
+        # die Windungen sind offene Bögen, keine geschlossenen Zellen (kein Mosaik)
+        self.assertTrue(all(b - a < 2 * math.pi - 0.2 for a, b in calls), "Windungen sind geschlossene Zellen")
         src = open(sketch.__file__, encoding="utf-8").read()
+        self.assertNotIn("_wrinkle", src, "altes Zellmosaik noch vorhanden")
         self.assertIn("_cerebrum", src, "Großhirnkontur fehlt")
         self.assertIn("_blob", src, "Kleinhirn fehlt")
 
@@ -824,7 +875,7 @@ class Wunsch082bTest(unittest.TestCase):
         surf, cr = self._blank(400, 160)
         p = Pen(cr)
         p.brain(200, 70, 2.3)
-        self.assertGreater(self._pink(surf, (120, 20, 280, 140)), 850, "Gehirn zu klein")
+        self.assertGreater(self._pink(surf, (120, 20, 280, 140)), 450, "Gehirn zu klein")
 
     def test_regression_brain_sits_further_right_of_the_title_box(self):
         """Regression 0.8.2b: das Gehirn sollte etwas weiter rechts vom Titelkasten sitzen."""

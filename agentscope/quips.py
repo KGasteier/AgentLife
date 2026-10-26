@@ -126,6 +126,56 @@ QUIPS = {
         "Wir haben nur Embeddings!",
     ],
 
+    # Rollen & Slapstick (0.8.3)
+    "chaplin": [
+        "Ein Tag wie jeder andere. Nur mit mehr Stolpern.",
+        "Ich habe den Bug nicht gefunden – er mich.",
+        "Nur ein Spaziergang. Mit Stock.",
+        "Zeit für ein kleines Tänzchen.",
+    ],
+    "heist": [
+        "Der Plan ist unmöglich. Genau mein Plan.",
+        "Leise… die API schläft nie.",
+        "Ich brauche keine Waffe. Nur einen gültigen Token.",
+        "Zutritt nur mit gültigem Kontext.",
+    ],
+    "elon": [
+        "To the moon! Äh… to the cache!",
+        "Wir machen das voll autonom. Versprochen.",
+        "Der Deploy ist in 3 Monaten. Safe.",
+        "Erst die Rakete, dann die Tests.",
+    ],
+    "sam": [
+        "AGI kommt. Und sie ist super lieb.",
+        "Wir machen das langsam und sicher. Demnächst.",
+        "Nur noch eine Skalierung, dann sind wir da.",
+        "Ich habe eine neue Version. Sie ist besser.",
+    ],
+    "zuck": [
+        "Ich bin kein Roboter. Wirklich.",
+        "Willkommen im Metaversum. Es ist leer hier.",
+        "Ich habe einen Helm. Du auch?",
+        "Bitte lächeln. Für die Daten.",
+    ],
+    "trump": [
+        "You're fired! Der ganze Stack.",
+        "Das ist der beste Kontext. Alle sagen das.",
+        "Wir machen eine Mauer. Gegen die Bugs.",
+        "Ein sehr, sehr großer Deploy.",
+    ],
+    "youtube": [
+        "Smash that like button!",
+        "Abonniert den Kanal, sonst kompaktiert es!",
+        "Was geht, Leute? Heute: Kontext!",
+        "Like, Abo und Glocke – der Algorithmus will es.",
+    ],
+    "gamer": [
+        "GG! Der Server hat mich betrogen!",
+        "Lag! Das war eindeutig Lag!",
+        "Ich habe gesmurfed. Äh, gesmurfed.",
+        "Wer hat den Boss gepullt?!",
+    ],
+
     # Herr der Token
     "gandalf": ["DU KANNST NICHT VORBEI!", "Du kannst nicht vorbei!", "DU KOMMST NICHT VORBEI!"],
     "gandalf_reply": [

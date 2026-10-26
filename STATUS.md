@@ -1,5 +1,15 @@
 # STATUS
 
+## Stand 0.8.3 – 33 neue Rollen- und Slapstick-Szenen
+- **Leerlauf wächst von 9 auf 42 Szenen.** 33 neue Szenen (`ROLES_083` in `acts.py`) laufen im 14-s-Takt, wenn ein Agent auf den nächsten Prompt wartet – die Figuren sind jetzt nicht mehr nur Kollegen, sondern Verkäufer, Künstler, Sportler und Popkultur:
+  - **Slapstick & Büro:** Chaplin mit Melone und Stock, Wutanfall am Schreibtisch („a bad day at the office“), Bankeinbruch im Stil von Mission Impossible.
+  - **Tech-Persönlichkeiten:** als Elon (Rakete, „TO THE MOON“), als Sam Altman, als Mark Zuckerberg, als Donald Trump, als YouTube-Influencer (Kamera, „ähm…“), als wütender Gamer.
+  - **Weitere Rollen:** Barista, Kellner, Dirigent, Magier, Maler, Koch, Detektiv, Astronaut, Boxer, Gewichtheber, Ninja, Pirat, Vampir, Roboter, Feuerjongleur, Pizzabäcker, Tourist, Taucher, Skateboarder, Superheld, Geist, Ritter, Cowboy, Mönch.
+- **Eigene Sprechblasen** für die acht Popkultur-Rollen in `quips.py` (`chaplin`, `heist`, `elon`, `sam`, `zuck`, `trump`, `youtube`, `gamer`), je vier deutsche Antworten; das englische Original bleibt erhalten.
+- **Bugfix Modell-Faden:** `scene._host_head(p, cx)` wählt den Kopf der Hauptfigur jetzt nur noch **oberhalb des Bodens** (`y < FLOOR - 2`). Vorher konnte der pinke Faden an eine Minion-/Umgebungsfigur in der unteren Leiste anschließen (y ≈ 464) – das ließ `ModelThreadTest` etwa jeden fünften Lauf scheitern. Regressionstest `test_regression_thread_never_attaches_below_the_floor` (injiziert bewusst einen Kopf unter dem Boden).
+- **Zeichen-Korrekturen:** `_actor` kennt kein `crouch` (jetzt `hip_dy`), `Pen.curve`/`Pen.arc` kennen kein `fill` (jetzt `poly(closed=True, fill=…)` bzw. `circle(fill=…)`); Vampir-Umhang, Geist und Mönch neu gezeichnet (Umhang hinter der Figur, Figur sitzt nicht mehr auf dem Boden).
+- Tests: **Python 87, Node 12**. Neu `PopCultureAndGrowthTest.test_regression_roles_083_scenes_registered` und `…_every_scene_renders_without_error` (je Szene bei t = 0,5/3,3/6,0/9,1/12,0), dazu `ModelThreadTest.test_regression_thread_never_attaches_below_the_floor`.
+
 ## Stand 0.8.2c
 - **Eigene Comicschrift mit Umlauten:** `agentscope/fonts/steel-umlaut-city.regular.ttf` – eine Ableitung von Steel City Comic, bei der die **leeren Umlaut-Slots** (Adieresis, Odieresis, Udieresis, adieresis, odieresis, udieresis) an Ort und Stelle mit den Konturen des Grundbuchstabens plus zwei handgezeichneten Punkten gefüllt sind; **ß** ist als monolineare Drei-Band-Konstruktion (Stiel, Haken, Schleife) neu gezeichnet. Die Familie heißt jetzt **`Steel Umlaut City`** (vorher Kollision mit dem Originalnamen), `sketch.HAND_FONT`. Der Per-Zeichen-Fallback bleibt, wird aber nur noch für ✓/↻ gebraucht. Regressionstests `test_steel_umlaut_city_is_bundled_and_resolves`, `test_regression_umlauts_live_in_the_extended_font`.
 - **Grundlinien-Wackeln beruhigt:** `HAND_WOBBLE = 0.55`, `HAND_TILT = 0.035` (vorher ±1,5 px und ±0,08 rad) – Blasen bleiben handschriftlich, aber lesbar. Regressionstest `test_regression_bubble_wobble_was_reduced`.

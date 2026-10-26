@@ -24,7 +24,8 @@ pi-Prozess ──(Erweiterung extension/)──► $XDG_RUNTIME_DIR/agentscope/<
 - **Dateien statt Socket**: kein Daemon, robust bei Abstürzen (tote PIDs werden ignoriert).
 - **Python + GTK4 + Cairo**: auf Omarchy vorhanden, kein Browser, wenig Ressourcen.
 - **Eigene Strichzeichnung** (deterministisches Wackeln, langsames „Boiling“) statt Bibliothek.
-- Tastenkürzel **SUPER+CTRL+ALT+A** (A = Agents; SUPER+CTRL+A war belegt).
+- Tastenkürzel **SUPER + A** (A = Agents; nochmal drücken schließt; SUPER+CTRL+A war belegt,
+  SUPER+CTRL+ALT+A bleibt ChatGPT).
 - Radial-Mesh-Layout: Vollbild über `radialmesh-fullscreen`, sonst Fensterregel.
 - **Schrift Steel Umlaut City** (mitgeliefert in `agentscope/fonts/steel-umlaut-city.regular.ttf`) für
   Überschriften, Blasen und Ausrufe; wird pro Prozess über `FcConfigAppFontAddFile` angemeldet – keine
@@ -50,6 +51,11 @@ pi-Prozess ──(Erweiterung extension/)──► $XDG_RUNTIME_DIR/agentscope/<
 
 ## Metaphern
 siehe README „Was man sieht“.
+
+## Leerlauf-Szenen
+Wartet ein Agent auf den nächsten Prompt, zeigt das Panel im 14-s-Takt eine von **42 Leerlauf-Szenen**
+(`acts.NEW_IDLE`, davon `ROLES_083` mit 33 Rollen/Slapstick-Bildern). Die Reihenfolge wechselt je
+Programmlauf (`RUN_SEED`) und ist über `FORCE["variant"]` für Vorschaubilder festnagelbar.
 
 ## Nicht-Ziele (vorerst)
 - Kein Sperrbildschirm/Idle-Auslöser (hypridle) – nur manueller Start.

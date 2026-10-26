@@ -436,6 +436,15 @@ def draw_inactive_rest(p: Pen, a: Agent, t: float):
     p.text("0 – kein Modell", 696, 458, 13, color=GRAY)
 
 
+def _host_head(p: Pen, cx: float):
+    """Kopf der Hauptfigur: nächste Hüfte an cx, aber nur oberhalb des Bodens.
+
+    Ohne den Bodenfilter konnte der Faden an eine Figur im unteren Streifen
+    (Minion/Umgebungsfigur, y > FLOOR) andocken und lief dann ins Leere."""
+    cand = [hh for hh in p.heads if hh[0][1] < FLOOR - 2]
+    return min(cand or p.heads, key=lambda hh: abs(hh[0][0] - cx))
+
+
 def _thread_points(bx, by, tx, ty, t, n=22):
     """Punkte des luftigen pinken Fadens von (bx,by) nach (tx,ty); Anfang und Ende exakt."""
     pts = []
@@ -479,7 +488,7 @@ def _model_thread(p: Pen, cx: float, t: float, broken: bool = False, bad: bool =
     else:
         bx, by = getattr(p, "brain_xy", (60.0, 18.0))
         by += 9
-    hip, head = min(p.heads, key=lambda hh: abs(hh[0][0] - cx))   # Kopf der Hauptfigur (nächste Hüfte an cx)
+    hip, head = _host_head(p, cx)                          # Kopf der Hauptfigur (nächste Hüfte an cx)
     hx, hy = head
     tx, ty = hx - 2, hy - 15                              # Kopfoberkante, fest am Kreis
     if broken:
