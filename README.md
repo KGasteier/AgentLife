@@ -11,7 +11,7 @@ Kontextfüllung, Kompaktierung und Fehlern. Mehrere Harnessse gleichzeitig:
 
 | Weg | Befehl |
 |---|---|
-| Tastenkürzel | **SUPER + CTRL + ALT + A** (nochmal drücken = schließen) |
+| Tastenkürzel | **SUPER + A** (nochmal drücken = schließen) |
 | Terminal | `agentscope` |
 | Demo ohne Agenten | `agentscope --demo` |
 | Fenster statt Vollbild | `agentscope --windowed` (nur `q`/`Esc` schließt) |
@@ -30,6 +30,7 @@ eine kurze Sitzungskennung. Ein dezent getönter **Titelkasten** unterscheidet d
 | Bild | Bedeutung |
 |---|---|
 | Figur am Schreibtisch | Hauptagent – Pose = Phase (Denkblase mit dem Prompt, Tippen, Werkzeug, Schlafen) |
+| Sprechblasen | Memes im englischen Original („Live long and prosper.“, „This is fine.“) mit wechselnden Antworten |
 | Hammer auf `>_`-Kiste / Buch / Bleistift / Megafon / Lupe | Werkzeug `bash` / `read` / `edit`·`write` / `subagent` / sonstige |
 | Glas „Kontext“ mit Presse | Kontextfüllung; Presse drückt + „QUETSCH!“ = Kompaktierung läuft, „GEQUETSCHT!“ = gerade fertig |
 | Tacho „TOKENS / SEC“ + Maul | aktuelle Ausgaberate, darunter Gesamtverbrauch (in/out); gelbe Token-Münzen fliegen ins Maul, grüne kommen heraus; „~N“ = aus Session-Logs geschätzt |
@@ -63,7 +64,7 @@ Schema: [docs/STATE.md](docs/STATE.md) · Konzept: [docs/SPEC.md](docs/SPEC.md) 
 ln -sfn ~/Work/omarchy-agentscope/extension ~/.pi/agent/extensions/agentscope
 ln -sfn ~/Work/omarchy-agentscope/bin/agentscope ~/.local/bin/agentscope
 # ~/.config/hypr/bindings.lua:
-o.bind("SUPER + CTRL + ALT + A", "Agentscope (xkcd)", "~/.local/bin/agentscope")
+o.bind("SUPER + A", "Agentscope (xkcd)", "~/.local/bin/agentscope")
 # ~/.config/hypr/hyprland.lua:
 o.window("org.omarchy.agentscope", { fullscreen = true })
 ```

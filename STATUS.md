@@ -1,5 +1,11 @@
 # STATUS
 
+## Stand 0.8.1
+- **Sprechblasen-Vorrat** `agentscope/quips.py`: Memes im englischen Original („Live long and prosper.“, „This is fine.“, „Beam me up, Scotty!“) plus deutsche Antworten in Variation. `quips.line(key, …)` wählt deterministisch aus der Liste (Lauf-`RUN_SEED`, Agent-Schlüssel, Zeitschlitz) – nie zweimal dasselbe; neue Antworten einfach anhängen. Antworten auf Spocks Gruß enthalten „Möge die Macht mit dir sein.“ und Verwandte.
+- **Verdrahtet:** Vulkanier (Gruß/Antwort/Beamen), „This is fine“, „6-7“, „Distracted Developer“, KI-Gegner, Sith/Jedi, Zombies, Gandalf.
+- **Tastenkürzel jetzt `SUPER + A`** (war frei; `SUPER+CTRL+A` = Audio, `SUPER+CTRL+ALT+A` = ChatGPT bleiben). `~/.config/hypr/bindings.lua` und README angepasst, live als modmask 64 registriert.
+- Tests: node 12, Python 62 (`test_regression_quips_vary_and_keep_the_original`, `test_spock_greeting_reply_is_star_wars`).
+
 ## Stand 0.8.0
 - **Farbe nur im Titelkasten:** Die Umrissfarbe je Harness sitzt jetzt ausschließlich im Beschriftungskasten (`scene.harness_tint` als Füllung, `scene.harness_ink` als Rahmen/Text). Alle Skizzenlinien bleiben schwarz; `Pen.ink` wird nicht mehr gesetzt. Regressionstest `Wunsch080Test.test_regression_only_the_title_box_is_tinted`.
 - **Titel trägt immer Sitzungsinfo:** Ohne Skill und Sitzungsnamen zeigt der Titel statt „?“ eine kurze Sitzungskennung (`scene.session_label` aus dem Agent-Schlüssel). Regressionstest `test_regression_title_always_carries_session_info`.

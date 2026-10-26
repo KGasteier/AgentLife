@@ -497,9 +497,28 @@ class Wunsch080Test(unittest.TestCase):
         self.assertGreater(len(seqs), 1, "Reihenfolge ist unabhängig vom Lauf identisch")
 
     def test_protesters_answer_ich_mach_nur_meinen_job(self):
-        src = open(scene.__file__.replace("scene.py", "acts.py")).read()
-        self.assertIn("Ich mach nur meinen Job.", src)
-        self.assertNotIn("Ich bin nur ein Strichmännchen!", src)
+        from agentscope import quips
+        self.assertIn("Ich mach nur meinen Job.", quips.QUIPS["protest_reply"])
+        self.assertNotIn("Ich bin nur ein Strichmännchen!", str(quips.QUIPS))
+
+    def test_regression_quips_vary_and_keep_the_original(self):
+        """Regression 0.8.1: fester Satz für Memes, aber nie zweimal dieselbe Antwort."""
+        from agentscope import quips
+        seen = {quips.line("protest_reply", "k", i) for i in range(30)}
+        self.assertGreater(len(seen), 1, "Antworten wechseln nicht")
+        self.assertEqual("Live long and prosper.", quips.line("spock_greeting", "k", 0))
+        self.assertIn("Möge die Macht mit dir sein.", quips.QUIPS["spock_reply"])
+        for key in ("spock_reply", "67_reply", "protest_reply", "fine", "jedi"):
+            self.assertGreaterEqual(len(quips.QUIPS[key]), 4, key)
+
+    def test_spock_greeting_reply_is_star_wars(self):
+        """Wunsch: Auf Spocks Gruß antwortet das Gegenüber „Möge die Macht mit dir sein“."""
+        from agentscope import acts
+        import inspect
+        src = inspect.getsource(acts.idle_trek)
+        self.assertIn('"spock_greeting"', src)
+        self.assertIn('"spock_reply"', src)
+        self.assertIn("Möge die Macht mit dir sein.", acts.quips.QUIPS["spock_reply"])
 
     def test_new_meme_and_challenge_scenes_registered(self):
         from agentscope import acts

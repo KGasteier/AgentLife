@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import math
 import random
+
+from . import quips
 from types import SimpleNamespace
 
 from . import dance
@@ -986,11 +988,11 @@ def idle_trek(p, a, t, c):
     hd = _host(p, c, lean=-6, look=-14 if _in(u, 3, 11) else 0,
                hands=((c.cx + 40, c.hip[1] - 40), (c.cx + 30, c.hip[1] - 4)) if _in(u, 6.4, 8.4) else None)
     if _in(u, 3.2, 6.4):
-        S.say_at(p, f["head"], "Lebe lang und in Frieden.", w=280, h=80, size=17, dx=70, color=BLUE)
+        S.say_at(p, f["head"], quips.line("spock_greeting", a.key, int(t / IDLE_SLOT_S)), w=300, h=80, size=17, dx=70, color=BLUE)
     elif _in(u, 6.4, 9.2):
-        S.say_at(p, hd, "Ich bin Agent, kein Vulkanier.", w=290, h=80, size=17, dx=40)
+        S.say_at(p, hd, quips.line("spock_reply", a.key, int(t / IDLE_SLOT_S)), w=320, h=84, size=16, dx=40)
     elif _in(u, 9.2, 11.4):
-        S.say_at(p, f["head"], "Scotty, beam mich hoch!", w=270, h=80, size=17, dx=70, color=BLUE)
+        S.say_at(p, f["head"], quips.line("spock_beam", a.key, int(t / IDLE_SLOT_S), 2), w=280, h=80, size=17, dx=70, color=BLUE)
     return "Raumschiff Strichmännchen: Beam me up"
 
 # ---------------------------------------------------------------- Zombies
@@ -1013,9 +1015,9 @@ def idle_zombies(p, a, t, c):
     hd = _host(p, c, lean=-12 if scared else -6, look=-12 if scared else 0, eyes="dots" if scared else None,
                hands=((c.cx + 34, c.hip[1] - 62), (c.cx + 24, c.hip[1] - 64)) if scared else None)
     if _in(u, 3.5, 7.2):
-        S.say_at(p, heads[0], "Hiiirn… Tokeeens…", w=240, h=70, size=18, dx=60, color=GREEN)
+        S.say_at(p, heads[0], quips.line("zombie", a.key, int(t / IDLE_SLOT_S)), w=250, h=70, size=18, dx=60, color=GREEN)
     elif _in(u, 7.2, 11):
-        S.say_at(p, hd, "Hirn gibt's hier nur als Cache!", w=300, h=84, size=17, dx=40)
+        S.say_at(p, hd, quips.line("zombie_reply", a.key, int(t / IDLE_SLOT_S)), w=320, h=84, size=16, dx=40)
     return "Zombie-Apokalypse im Kontextfenster"
 
 # ---------------------------------------------------------------- Star Wars
@@ -1048,9 +1050,9 @@ def idle_starwars(p, a, t, c):
     if _in(u, 0, 2.2):
         p.text("kchh… kchh…", vx - 10, hy - 26, 14, align="center", color=GRAY, hand=True, upper=False)
     elif _in(u, 3.5, 6.8):
-        S.say_at(p, fv["head"], "Ich bin dein Vater!", w=250, h=70, size=18, dx=-20, color=INK)
+        S.say_at(p, fv["head"], quips.line("vader", a.key, int(t / IDLE_SLOT_S)), w=270, h=74, size=17, dx=-20, color=INK)
     elif _in(u, 6.8, 10.8):
-        S.say_at(p, fj["head"], "Neeein! Das ist ein Merge-Konflikt!", w=300, h=90, size=16, dx=60, color=BLUE)
+        S.say_at(p, fj["head"], quips.line("jedi", a.key, int(t / IDLE_SLOT_S)), w=320, h=90, size=16, dx=60, color=BLUE)
     return "Möge der Merge mit dir sein"
 
 # ---------------------------------------------------------------- Herr der Ringe
@@ -1087,9 +1089,9 @@ def idle_lotr(p, a, t, c):
         if u < 3.2:
             S.say_at(p, hd, "Mein Schaaatz…", w=220, h=64, size=19, dx=40)
     if _in(u, 4.4, 8.4):
-        S.say_at(p, f["head"], "DU KANNST NICHT VORBEI!", w=290, h=80, size=19, dx=70, color=col)
+        S.say_at(p, f["head"], quips.line("gandalf", a.key, int(t / IDLE_SLOT_S)), w=300, h=80, size=19, dx=70, color=col)
     elif _in(u, 8.4, 11):
-        S.say_at(p, hd, "Ich wollte nur kurz Kontext erweitern…", w=310, h=90, size=16, dx=40)
+        S.say_at(p, hd, quips.line("gandalf_reply", a.key, int(t / IDLE_SLOT_S)), w=320, h=90, size=16, dx=40)
     return "Der Herr der Token"
 
 # ---------------------------------------------------------------- Kaffee zu zweit
@@ -1231,7 +1233,7 @@ def idle_protest(p, a, t, c):
     if _in(u, 3.2, 7.4):
         S.say_at(p, heads[1], "Hey hey, ho ho, die KI muss weg!", w=300, h=84, size=17, dx=70, color=RED)
     elif _in(u, 7.4, 10.8):
-        S.say_at(p, hd, "Ich mach nur meinen Job.", w=290, h=80, size=17, dx=40)
+        S.say_at(p, hd, quips.line("protest_reply", a.key, int(t / IDLE_SLOT_S)), w=320, h=84, size=16, dx=40)
     return "Demo: Menschen gegen Maschinen"
 
 # ---------------------------------------------------------------- Cosplay / LARP
@@ -1471,9 +1473,9 @@ def idle_67(p, a, t, c):
                hands=((c.cx + 24, c.hip[1] - 26 + 16 * beat), (c.cx + 32, c.hip[1] - 4)))
     p.text("6-7", 218 + 8 * beat, 118, 46, align="center", bold=True, color=BLUE)
     if _in(u, 2, 6):
-        S.say_at(p, f["head"], "Sechs! Sieben!", w=230, h=70, size=18, dx=40, color=BLUE)
+        S.say_at(p, f["head"], quips.line("67", a.key, int(t / IDLE_SLOT_S)), w=250, h=70, size=18, dx=40, color=BLUE)
     elif _in(u, 6, 10.4):
-        S.say_at(p, hd, "Ich zähle nur Tokens.", w=250, h=74, size=17, dx=40)
+        S.say_at(p, hd, quips.line("67_reply", a.key, int(t / IDLE_SLOT_S)), w=270, h=74, size=17, dx=40)
     return "Meme: 6-7"
 
 
@@ -1486,7 +1488,7 @@ def idle_thisisfine(p, a, t, c):
     hd = _host(p, c, lean=2, look=6, eyes="dots",
                hands=((mug[0] - 6, mug[1] - 20), (mug[0] - 4, mug[1] - 8)))
     _mug(p, mug[0], mug[1], steam_t=t)
-    S.say_at(p, hd, "Alles in Ordnung.", w=240, h=70, size=17, dx=40)
+    S.say_at(p, hd, quips.line("fine", a.key, int(t / IDLE_SLOT_S)), w=260, h=70, size=17, dx=40)
     return "Meme: This is fine"
 
 
@@ -1509,7 +1511,7 @@ def idle_distracted(p, a, t, c):
     for i in range(3):
         _heart(p, fo["head"][0] + 18, fo["head"][1] - 20 - i * 14, 4)
     if watching:
-        S.say_at(p, fb["head"], "Äh… ich schau nur kurz.", w=260, h=74, size=17, dx=40)
+        S.say_at(p, fb["head"], quips.line("distracted", a.key, int(t / IDLE_SLOT_S)), w=280, h=74, size=17, dx=40)
     return "Meme: Distracted Developer"
 
 
