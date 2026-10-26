@@ -533,7 +533,7 @@ def idle_guest(p, a, t, c):
         return ((sh[0] + 8, sh[1] + 32), (sh[0] + 2, sh[1] + 34))
     vf, sh = _visitor(p, vx, t, walking, flip, hf)
     p.rect(vx - 14, sh[1] + 10, 28, 12, lw=1.2, color=BLUE, fill=PAPER)
-    p.text(name, vx, sh[1] + 12, 9, align="center", color=BLUE, hand=True, upper=False, bold=True)
+    p.text(name, vx, sh[1] + 12, 9, align="center", color=BLUE, hand=True, upper=False)
     hd = _sitter(p, a, c, 18 if 3 <= u < 11 else 0)
     if 3 <= u < 4.2:
         S.say_at(p, vf["head"], "Hallo!", w=150, h=60, dx=40, color=BLUE)
@@ -593,7 +593,7 @@ def idle_postman(p, a, t, c):
             kk = k - i * 0.25
             if kk > 0:
                 p.coin(hand[0] + 4 + 14 * (i - 2) * min(1, kk), hand[1] - 20 - 62 * min(kk, 1.6) + 18 * kk * kk, r=6, color=INK)
-        p.text(f"+{amount}k tok", hand[0] + 30, hand[1] - 100, 20, align="center", color=BLUE, hand=True, upper=False, bold=True)
+        p.text(f"+{amount}k tok", hand[0] + 30, hand[1] - 100, 20, align="center", color=BLUE, hand=True, upper=False)
     if 8.5 <= u < 11:
         S.say_at(p, hd_pos, "Danke! Quittung?", w=230, h=70, dx=40)
     elif 5.2 <= u < 6.4:
@@ -749,8 +749,8 @@ def idle_desksleep(p, a, t, c):
         k = (t * 0.4 + i / 3) % 1
         p.text("z", hx + 10 + k * 40, hy - 24 - k * 80, 14 + k * 20, color=GRAY, hand=True)
     p.text("zzzzzzzzzzzz", c.lap_x + 4, c.desk_y - 30, 8, color=GRAY, hand=True, upper=False, jitter=0.2)   # Tastatur-Abdruck auf dem Bildschirm
-    p.circle(hx + 12, hy + 12 + 1.5 * math.sin(t), 2.5 + 1.2 * math.sin(t * 0.7), w=1.2, color=BLUE, fill=(0.85, 0.92, 1.0))
-    return "Nickerchen auf der Tastatur"
+    _drool(p, hx + 11, hy + 8, c.desk_y - 2, ((t % IDLE_SLOT_S) - 2.0) / 5.0)
+    return "Nickerchen auf der Tastatur (sabber)"
 
 def idle_paperball(p, a, t, c):
     """Papierkugel knüllen und in den Eimer werfen – manchmal daneben."""
@@ -885,7 +885,563 @@ def error_headdesk(p, a, t, c):
             p.line(h["head"][0] + 10, h["head"][1] - 10, h["head"][0] + 10 + 14 * i, h["head"][1] - 24, w=1.3, color=GRAY, amp=0)
     return a.last_error or "Fehler"
 
-NEW_IDLE = [idle_guest, idle_postman, idle_fly, idle_desksleep, idle_paperball, idle_spin, idle_stretch, idle_phone, idle_spider]
+# ====================================================================== Popkultur, Besuch, Sport (0.6.0)
+PINK = (0.85, 0.25, 0.5)
+GREEN = (0.30, 0.48, 0.26)
+GOLD = (1.0, 0.85, 0.3)
+
+def _in(u, a, b):
+    return a <= u < b
+
+def _slot(a, t):
+    return t % IDLE_SLOT_S, int(t / IDLE_SLOT_S)
+
+def _actor(p, x, t, *, s=0.9, flip=False, color=BLUE, walking=False, hands=None, feet=None, lean=0.0, eyes=None, hip_dy=0.0, w=2.4):
+    """Stehende Nebenfigur. hands: None | ((x,y),(x,y)) | Funktion(Schulter) -> Hände. → (Figur, Schulter)."""
+    hip_y = FLOOR - 2 * LEG * s + 0.5 + hip_dy
+    if feet is None:
+        feet = _walk_feet(x, t * 6, stance=8 * s, step=11 * s, lift=6) if walking else ((x - 8 * s, FLOOR), (x + 8 * s, FLOOR))
+    sh = Pen.anchors(x, hip_y, s=s, flip=flip, lean=lean)["sh"]
+    if callable(hands):
+        hands = hands(sh)
+    elif hands is None:
+        hands = ((sh[0] + 8 * s, sh[1] + 32 * s), (sh[0] + 2 * s, sh[1] + 34 * s))
+    f = p.figure(x, hip_y, s=s, flip=flip, feet=feet, hands=hands, color=color, lean=lean, eyes=eyes, w=w)
+    return f, sh
+
+def _host(p, c, *, lean=-6, look=0, hands=None, eyes=None):
+    hands = hands or ((c.cx + 24, c.hip[1] - 6), (c.cx + 30, c.hip[1] - 4))
+    S.seated(p, c.hip, lean=lean, look=look, hands=hands, eyes=eyes)
+    return S.seated_at(c.hip, lean=lean, look=look)["head"]
+
+def _sparkle(p, x, y, r, color=GRAY):
+    p.line(x - r, y, x + r, y, w=1.2, color=color, amp=0)
+    p.line(x, y - r, x, y + r, w=1.2, color=color, amp=0)
+
+def _heart(p, x, y, r, color=RED):
+    pts = []
+    for i in range(25):
+        a = i / 24 * 2 * math.pi
+        pts.append((x + 16 * math.sin(a) ** 3 * r / 16,
+                    y - (13 * math.cos(a) - 5 * math.cos(2 * a) - 2 * math.cos(3 * a) - math.cos(4 * a)) * r / 16))
+    p.poly(pts, closed=True, w=1.5, color=color, fill=(1.0, 0.86, 0.9), amp=0)
+
+def _blush(p, head):
+    for i in range(3):
+        p.line(head[0] + 3 + 3 * i, head[1] + 3, head[0] + 1 + 3 * i, head[1] + 8, w=1.3, color=RED, amp=0)
+
+def _saber(p, base, tip, color):
+    light = tuple(0.55 + 0.45 * ch for ch in color)
+    p.line(*base, *tip, w=8, color=light, amp=0)
+    p.line(*base, *tip, w=3.4, color=color, amp=0)
+    p.line(*base, *tip, w=1.2, color=PAPER, amp=0)
+
+def _drool(p, mx, my, bottom_y, k):
+    """Sabber: läuft vom Mundwinkel nach unten (k 0…1), unten sammelt sich ein Tropfen/Pfütze."""
+    k = max(0.0, min(1.0, k))
+    end = my + (bottom_y - my) * k
+    col = (0.45, 0.65, 0.95)
+    p.line(mx, my, mx + 1.5, end, w=1.8, color=col, amp=0)
+    p.circle(mx + 1.5, end + 2, 2.2, w=1.3, color=col, fill=(0.85, 0.92, 1.0))
+    if k >= 0.98:
+        p.curve([(mx - 10, bottom_y), (mx + 1, bottom_y - 3), (mx + 12, bottom_y)], w=1.4, color=col)
+
+# ---------------------------------------------------------------- Star Trek
+def idle_trek(p, a, t, c):
+    """Ein Vulkanier grüßt, wird nicht verstanden und lässt sich hochbeamen."""
+    u, _ = _slot(a, t)
+    vx, walking, flip = _arrive(u) if u < 11 else (110, False, True)
+    salute = _in(u, 3.2, 7.2)
+    def hf(sh):
+        return ((sh[0] + 22, sh[1] - 16), (sh[0] + 4, sh[1] + 32)) if salute else None
+    beam = max(0.0, min(1.0, (u - 11.0) / 2.6))
+    cr = p.cr
+    cr.save()
+    if beam > 0:
+        cr.rectangle(0, FLOOR - 120 + beam * 125, 400, 200)
+        cr.clip()
+    f, sh = _actor(p, vx, t, walking=walking, flip=flip, hands=hf, color=BLUE)
+    hx, hy = f["head"]
+    for e in (-1, 1):
+        p.poly([(hx + e * 12, hy - 2), (hx + e * 19, hy - 12), (hx + e * 10, hy - 8)], closed=True, w=1.4, color=BLUE, fill=PAPER, amp=0)
+    p.line(hx - 12, hy - 7, hx + 12, hy - 7, w=3.2, color=BLUE, amp=0)
+    p.rect(vx - 10, sh[1] + 12, 20, 6, lw=1.0, color=BLUE, fill=(0.8, 0.88, 1.0))      # Uniform-Streifen
+    if salute:
+        hnd = f["hl"]
+        p.line(hnd[0], hnd[1], hnd[0] - 3, hnd[1] - 8, w=1.4, color=BLUE, amp=0)
+        p.line(hnd[0], hnd[1], hnd[0] + 3, hnd[1] - 8, w=1.4, color=BLUE, amp=0)
+    cr.restore()
+    if u >= 10.6:
+        for i in range(16):
+            ph = (t * 0.9 + i * 0.37) % 1
+            sx = vx - 18 + 36 * S._hash01(i, int(t * 3), 4)
+            sy = FLOOR - 4 - 110 * ph
+            if sy > FLOOR - 120 + beam * 125 - 10:
+                _sparkle(p, sx, sy, 2.5 + 2 * (1 - ph), color=BLUE if i % 2 else GRAY)
+    hd = _host(p, c, lean=-6, look=-14 if _in(u, 3, 11) else 0,
+               hands=((c.cx + 40, c.hip[1] - 40), (c.cx + 30, c.hip[1] - 4)) if _in(u, 6.4, 8.4) else None)
+    if _in(u, 3.2, 6.4):
+        S.say_at(p, f["head"], "Lebe lang und in Frieden.", w=280, h=80, size=17, dx=70, color=BLUE)
+    elif _in(u, 6.4, 9.2):
+        S.say_at(p, hd, "Ich bin Agent, kein Vulkanier.", w=290, h=80, size=17, dx=40)
+    elif _in(u, 9.2, 11.4):
+        S.say_at(p, f["head"], "Scotty, beam mich hoch!", w=270, h=80, size=17, dx=70, color=BLUE)
+    return "Raumschiff Strichmännchen: Beam me up"
+
+# ---------------------------------------------------------------- Zombies
+def idle_zombies(p, a, t, c):
+    """Zwei Zombies wollen Hirn. Der Agent bietet den Cache an."""
+    u, _ = _slot(a, t)
+    e = max(0.0, min(1.0, min(u / 3.5, (IDLE_SLOT_S - u) / 3.0)))
+    moving = u < 3.5 or u >= 11
+    x1 = -30 + 150 * e
+    x2 = -50 + 105 * e
+    sway = 0 if moving else 2.5 * math.sin(t * 1.3)
+    heads = []
+    for i, x in enumerate((x1, x2)):
+        x += sway * (1 if i else -1)
+        f, sh = _actor(p, x, t * 0.45, s=0.9, flip=True, color=GREEN, lean=14, eyes="x", walking=moving,
+                       hands=lambda sh: ((sh[0] + 31, sh[1] + 1 + 3 * math.sin(t * 2)), (sh[0] + 27, sh[1] + 10)))
+        heads.append(f["head"])
+    p.curve([(x2 - 8, FLOOR - 1), (x2 - 2, FLOOR - 4), (x2 + 6, FLOOR - 1)], w=1.6, color=GREEN)    # schleift ein Bein nach
+    scared = _in(u, 3.5, 11)
+    hd = _host(p, c, lean=-12 if scared else -6, look=-12 if scared else 0, eyes="dots" if scared else None,
+               hands=((c.cx + 34, c.hip[1] - 62), (c.cx + 24, c.hip[1] - 64)) if scared else None)
+    if _in(u, 3.5, 7.2):
+        S.say_at(p, heads[0], "Hiiirn… Tokeeens…", w=240, h=70, size=18, dx=60, color=GREEN)
+    elif _in(u, 7.2, 11):
+        S.say_at(p, hd, "Hirn gibt's hier nur als Cache!", w=300, h=84, size=17, dx=40)
+    return "Zombie-Apokalypse im Kontextfenster"
+
+# ---------------------------------------------------------------- Star Wars
+def idle_starwars(p, a, t, c):
+    """Der Agent als Sith-Lord im Lichtschwertduell mit einem Jedi."""
+    u, _ = _slot(a, t)
+    e = max(0.0, min(1.0, min(u / 2.0, (IDLE_SLOT_S - u) / 2.5)))
+    jx = -20 + 90 * e
+    vx = 172
+    fight = _in(u, 2.2, 11.5)
+    ang_j = (35 + 28 * math.sin(t * 4.6)) if fight else 12
+    ang_v = (35 + 28 * math.sin(t * 4.6 + math.pi)) if fight else 12
+    # Umhang
+    p.poly([(vx + 4, FLOOR - 2 * LEG + 0.5 - 40 + 40), (vx + 30, FLOOR - 8), (vx + 12, FLOOR - 6)], closed=True, w=1.6, color=INK, fill=(0.8, 0.8, 0.8), amp=0)
+    fv, shv = _actor(p, vx, t, s=1.0, flip=False, color=INK, hands=lambda sh: ((sh[0] - 26, sh[1] + 8), (sh[0] - 16, sh[1] + 16)))
+    hx, hy = fv["head"]
+    p.circle(hx, hy, 14.5, w=1.6, fill=INK)
+    p.poly([(hx - 10, hy + 6), (hx + 10, hy + 6), (hx + 6, hy + 16), (hx - 6, hy + 16)], closed=True, w=1.2, fill=INK, amp=0)
+    p.line(hx - 7, hy - 2, hx - 1, hy + 1, w=2.0, color=PAPER, amp=0)
+    fj, shj = _actor(p, jx, t, s=0.9, flip=True, color=BLUE, walking=e < 1 and u < 11,
+                     hands=lambda sh: ((sh[0] + 24, sh[1] + 6), (sh[0] + 14, sh[1] + 14)))
+    bj, bv = fj["hl"], fv["hl"]
+    _saber(p, bj, (bj[0] + 46 * math.sin(math.radians(ang_j)), bj[1] - 46 * math.cos(math.radians(ang_j))), BLUE)
+    _saber(p, bv, (bv[0] - 46 * math.sin(math.radians(ang_v)), bv[1] - 46 * math.cos(math.radians(ang_v))), RED)
+    if fight and math.cos(t * 4.6 * 2) > 0.8:
+        mx, my = (bj[0] + bv[0]) / 2, min(bj[1], bv[1]) - 28
+        for k in range(6):
+            r = k * math.pi / 3 + t
+            p.line(mx + 5 * math.cos(r), my + 5 * math.sin(r), mx + 13 * math.cos(r), my + 13 * math.sin(r), w=1.4, color=GOLD, amp=0)
+    if _in(u, 0, 2.2):
+        p.text("kchh… kchh…", vx - 10, hy - 26, 14, align="center", color=GRAY, hand=True, upper=False)
+    elif _in(u, 3.5, 6.8):
+        S.say_at(p, fv["head"], "Ich bin dein Vater!", w=250, h=70, size=18, dx=-20, color=INK)
+    elif _in(u, 6.8, 10.8):
+        S.say_at(p, fj["head"], "Neeein! Das ist ein Merge-Konflikt!", w=300, h=90, size=16, dx=60, color=BLUE)
+    return "Möge der Merge mit dir sein"
+
+# ---------------------------------------------------------------- Herr der Ringe
+def idle_lotr(p, a, t, c):
+    """Der Agent verfällt dem einen Ring; ein Zauberer verbietet das Vorbeikommen."""
+    u, _ = _slot(a, t)
+    vx, walking, flip = _arrive(u) if u < 11 else (110, False, True)
+    slam = _in(u, 4.4, 5.2)
+    lift = 22 * math.sin((u - 4.4) / 0.8 * math.pi) if slam else 0
+    def hf(sh):
+        return ((sh[0] + 22, sh[1] + 20), (sh[0] + 8, sh[1] + 26))
+    f, sh = _actor(p, vx, t, s=0.95, walking=walking, flip=flip, color=(0.35, 0.35, 0.4), hands=hf)
+    col = (0.35, 0.35, 0.4)
+    hx, hy = f["head"]
+    p.poly([(sh[0] - 6, sh[1]), (sh[0] + 6, sh[1]), (vx + 17, FLOOR - 4), (vx - 17, FLOOR - 4)], closed=True, w=1.5, color=col, fill=(0.93, 0.93, 0.95), amp=0)
+    p.poly([(hx - 14, hy - 9), (hx + 14, hy - 9), (hx + 3, hy - 54)], closed=True, w=1.6, color=col, fill=(0.85, 0.85, 0.9), amp=0)
+    p.line(hx - 19, hy - 9, hx + 19, hy - 9, w=2.0, color=col, amp=0)
+    p.poly([(hx - 7, hy + 8), (hx + 7, hy + 8), (hx + 1, hy + 36)], closed=True, w=1.4, color=col, fill=PAPER, amp=0)
+    stx = f["hl"][0]
+    top = f["hl"][1] - 70
+    p.line(stx, FLOOR - lift, stx, top, w=2.6, color=(0.45, 0.3, 0.15), amp=0.3)
+    p.circle(stx, top - 3, 4.5, w=1.4, color=col, fill=(1.0, 0.97, 0.8))
+    if slam or _in(u, 5.2, 5.7):
+        for k in range(8):
+            r = math.pi * (0.1 + 0.8 * k / 7)
+            p.line(stx + 8 * math.cos(r), FLOOR - 2 - 8 * math.sin(r), stx + 26 * math.cos(r), FLOOR - 2 - 26 * math.sin(r), w=1.4, color=GOLD, amp=0)
+    ring = _in(u, 0, 4.6)
+    hd = _host(p, c, lean=-6, look=-14 if _in(u, 3, 11) else 0, eyes="dots" if ring else None,
+               hands=((c.cx + 40, c.hip[1] - 66 + 3 * math.sin(t * 3)), (c.cx + 30, c.hip[1] - 4)) if ring else None)
+    if ring:
+        rx, ry = c.cx + 42, c.hip[1] - 78 + 3 * math.sin(t * 3)
+        p.circle(rx, ry, 4.2, w=2.2, color=(0.8, 0.6, 0.1), fill=PAPER)
+        _sparkle(p, rx + 7, ry - 7, 3, color=GOLD)
+        if u < 3.2:
+            S.say_at(p, hd, "Mein Schaaatz…", w=220, h=64, size=19, dx=40)
+    if _in(u, 4.4, 8.4):
+        S.say_at(p, f["head"], "DU KANNST NICHT VORBEI!", w=290, h=80, size=19, dx=70, color=col)
+    elif _in(u, 8.4, 11):
+        S.say_at(p, hd, "Ich wollte nur kurz Kontext erweitern…", w=310, h=90, size=16, dx=40)
+    return "Der Herr der Token"
+
+# ---------------------------------------------------------------- Kaffee zu zweit
+def idle_coffeeduo(p, a, t, c):
+    """Gast setzt sich auf einen zweiten Stuhl; gemeinsame Kaffeepause mit Anstoßen."""
+    u, n = _slot(a, t)
+    gx = 118
+    seated = u >= 3.2 and u < 12
+    if seated or u >= 3.2:
+        p.chair(gx, c.seat_y, c.floor, facing=1)
+    sip = _in(u, 3.8, 6.0) or _in(u, 9.0, 11.0)
+    clink = _in(u, 6.0, 8.2)
+    mug_y = c.hip[1] - 34
+    cl = (156, mug_y - 4)
+    if seated:
+        gh = (gx, c.seat_y - 3)
+        gsh = Pen.anchors(*gh, lean=-4, flip=True)["sh"]
+        hand = cl if clink else ((gsh[0] + 8, gsh[1] - 20 + 3 * math.sin(t * 5)) if sip else (gsh[0] + 18, mug_y + 8))
+        gf = p.figure(gx, gh[1], lean=-4, flip=True, color=BLUE, hands=(None, hand),
+                      feet=((gx + LEG + 3, FLOOR), (gx + LEG - 5, FLOOR)), la=(-60, -40))
+        ghd = gf["head"]
+        ghand = gf["hr"]
+        _mug(p, ghand[0], ghand[1] + 10, steam_t=t)
+    else:
+        vx, walking, flip = _arrive(u) if u < 3.2 else (118, False, True)
+        gf, _sh = _actor(p, vx, t, walking=walking, flip=flip)
+        ghd = gf["head"]
+    hhand = (cl[0] + 6, cl[1]) if clink else ((c.cx - 4, c.hip[1] - 44 + 3 * math.sin(t * 5)) if sip else (c.cx + 24, c.hip[1] - 6))
+    hd = _host(p, c, lean=-6, look=-18 if u >= 3 else 0, hands=(hhand, (c.cx + 30, c.hip[1] - 4)))
+    if u >= 3:
+        _mug(p, hhand[0], hhand[1] + 10, steam_t=t + 1)
+    if clink and 6.8 < u < 7.4:
+        _sparkle(p, 160, mug_y - 12, 5, color=GOLD)
+    if _in(u, 4.0, 6.0):
+        S.say_at(p, ghd, "Pause! Die Tokens laufen nicht weg.", w=280, h=84, size=17, dx=40, color=BLUE)
+    elif _in(u, 6.0, 8.2):
+        S.say_at(p, hd, "Prost! Auf unseren Kontext.", w=270, h=80, size=17, dx=40)
+    elif _in(u, 8.2, 11.6):
+        S.say_at(p, ghd, "Gleich nochmal kompaktieren?", w=270, h=80, size=17, dx=40, color=BLUE)
+    return "Kaffeepause zu zweit"
+
+# ---------------------------------------------------------------- Flirt
+def idle_flirt(p, a, t, c):
+    """Eine Agentin kommt herein, zwinkert und flirtet. Der Agent wird rot."""
+    u, _ = _slot(a, t)
+    vx, walking, flip = _arrive(u) if u < 11 else (110, False, True)
+    lean = 8 if _in(u, 5, 10) else 0
+    wave = _in(u, 11.3, 13.5)
+    def hf(sh):
+        if wave:
+            return ((sh[0] + 20, sh[1] - 20 + 8 * math.sin(t * 9)), (sh[0] + 14, sh[1] + 10))
+        return ((sh[0] + 14, sh[1] + 22), (sh[0] + 14, sh[1] + 20))        # Hand in der Hüfte
+    f, sh = _actor(p, vx + 2 * math.sin(t * 2) * (not walking), t, walking=walking, flip=flip, color=PINK, hands=hf, lean=lean)
+    hx, hy = f["head"]
+    hip = f["hip"]
+    p.poly([(hip[0], hip[1] - 4), (hip[0] - 17, hip[1] + 24), (hip[0] + 17, hip[1] + 24)], closed=True, w=1.6, color=PINK, fill=(1.0, 0.9, 0.93), amp=0)
+    for e in (-1, 1):
+        p.curve([(hx + e * 11, hy - 6), (hx + e * 16, hy + 8), (hx + e * 12 + math.sin(t * 2) * 2, hy + 22)], w=2.0, color=PINK)
+    p.line(hx - 12, hy - 8, hx + 12, hy - 8, w=2.4, color=PINK, amp=0)
+    p.circle(hx - 9, hy - 14, 3.5, w=1.4, color=PINK, fill=(1.0, 0.8, 0.88))                  # Schleife
+    p.curve([(hx + 5, hy + 6), (hx + 9, hy + 8), (hx + 13, hy + 6)], w=2.2, color=RED)          # Lippen
+    if _in(u, 3.4, 4.4):
+        p.line(hx + 4, hy - 3, hx + 9, hy - 3, w=1.6, color=PINK, amp=0)                         # Zwinkern
+    if u >= 3.4 and u < 11:
+        for i in range(4):
+            k = (t * 0.35 + i / 4) % 1
+            _heart(p, hx + 18 + 16 * math.sin(i * 2 + t), hy - 22 - k * 70, 5 + 2 * (1 - k), color=RED if i % 2 else PINK)
+    hd = _host(p, c, lean=-4, look=-18 if _in(u, 3, 11) else 0, eyes="dots" if _in(u, 4.6, 11) else None)
+    if _in(u, 5, 11):
+        _blush(p, hd)
+        p.text("*", hd[0] - 18, hd[1] - 16, 16, color=BLUE, hand=True)
+    if _in(u, 3.4, 7.0):
+        S.say_at(p, f["head"], "Na du? Kommst du öfter in Kontexte?", w=300, h=90, size=17, dx=70, color=PINK)
+    elif _in(u, 7.0, 10.8):
+        S.say_at(p, hd, "Äh… ich hab gleich einen Deploy!", w=300, h=84, size=17, dx=40)
+    elif wave:
+        S.say_at(p, f["head"], "Ruf mich an!", w=190, h=60, size=17, dx=60, color=PINK)
+    return "Besuch: eine Agentin flirtet"
+
+# ---------------------------------------------------------------- Kinder
+def idle_kids(p, a, t, c):
+    """Zwei Kinder toben durchs Büro und gehen dem Agenten auf die Nerven."""
+    u, _ = _slot(a, t)
+    e = max(0.0, min(1.0, min(u / 2.5, (IDLE_SLOT_S - u) / 2.5)))
+    heads = []
+    for i, col in enumerate((BLUE, RED)):
+        xp = 80 + 55 * math.sin(t * (0.9 + 0.3 * i) + i * 2.1)
+        x = -20 + (xp + 20) * e
+        flip = math.cos(t * (0.9 + 0.3 * i) + i * 2.1) > 0
+        jump = 7 * abs(math.sin(t * 5 + i))
+        f, sh = _actor(p, x, t * 1.2, s=0.55, flip=flip, color=col, walking=True,
+                       hands=lambda sh, i=i: ((sh[0] + 12, sh[1] - 14 + 6 * math.sin(t * 9 + i)), (sh[0] - 12, sh[1] - 12 + 6 * math.sin(t * 9 + i + 2))),
+                       hip_dy=-jump)
+        heads.append(f["head"])
+    k = ((t - 2.5) * 0.12) % 1
+    if u > 2.5:
+        _plane(p, 20 + 300 * k, 120 + 30 * math.sin(k * 8), -0.2)
+    mad = _in(u, 4, 11)
+    hd0 = S.seated_at(c.hip, lean=-6, look=-10)["head"]
+    hd = _host(p, c, lean=-6, look=-10 if u > 2 else 0, eyes="x" if _in(u, 8, 10) else None,
+               hands=((hd0[0] + 13, hd0[1] + 2), (hd0[0] - 13, hd0[1] + 2)) if mad else None)
+    if mad:
+        zx, zy = hd[0] + 2, hd[1] - 26
+        p.poly([(zx - 8, zy - 5), (zx - 2, zy - 1), (zx - 6, zy + 3), (zx + 2, zy + 6)], w=2.2, color=RED, amp=0)
+        p.poly([(zx + 6, zy - 8), (zx + 12, zy - 4), (zx + 8, zy), (zx + 15, zy + 3)], w=2.2, color=RED, amp=0)
+    if _in(u, 2.6, 5.2):
+        S.say_at(p, heads[0], "Sind wir bald fertig?", w=250, h=70, size=17, dx=60, color=BLUE)
+    elif _in(u, 5.2, 7.8):
+        S.say_at(p, heads[1], "Mir ist so langweilig!", w=250, h=70, size=17, dx=60, color=RED)
+    elif _in(u, 7.8, 10.6):
+        S.say_at(p, hd, "Pssst! Papa kompaktiert!", w=270, h=70, size=17, dx=40)
+    return "Kinder im Büro: Konzentration ist relativ"
+
+# ---------------------------------------------------------------- No-AI-Demo
+SIGNS = ["KEINE KI!", "MENSCHEN STATT MASCHINEN", "MEIN PROMPT, MEIN RECHT", "NO AI!"]
+
+def idle_protest(p, a, t, c):
+    """Drei Demonstranten mit Schildern ziehen gegen KI durchs Büro."""
+    u, n = _slot(a, t)
+    e = max(0.0, min(1.0, min(u / 3.0, (IDLE_SLOT_S - u) / 3.0)))
+    moving = u < 3 or u >= 11
+    heads = []
+    for i in range(3):
+        xp = 55 + 52 * i
+        x = -30 - 40 * i + (xp + 30 + 40 * i) * e
+        hold = lambda sh, i=i: ((sh[0] + 8, sh[1] - 16 + 4 * math.sin(t * 4 + i)), (sh[0] - 4, sh[1] - 12 + 4 * math.sin(t * 4 + i)))
+        f, sh = _actor(p, x, t, s=0.85, flip=True, color=RED, walking=moving, hands=hold)
+        hx, hy = f["head"]
+        txt = SIGNS[(kh(a.key) + n + i) % len(SIGNS)]
+        bx, by = f["hl"][0] - 22, f["hl"][1] - 48 + 4 * math.sin(t * 4 + i)
+        p.line(f["hl"][0], f["hl"][1], f["hl"][0] - 1, by + 34, w=2.0, color=INK, amp=0)
+        p.rect(bx - 12, by, 62, 34, lw=1.8, color=RED, fill=PAPER)
+        p.text(txt, bx + 19, by + 14, 8, align="center", color=RED, maxw=58)
+        if len(txt) > 12:
+            p.text("", bx + 19, by + 26, 8)
+        heads.append(f["head"])
+    hd = _host(p, c, lean=-8, look=-10 if u > 2 else 0, eyes="dots" if _in(u, 8, 11) else None,
+               hands=((c.cx + 24, c.hip[1] - 6), (c.cx + 30, c.hip[1] - 4)))
+    if _in(u, 3.2, 7.4):
+        S.say_at(p, heads[1], "Hey hey, ho ho, die KI muss weg!", w=300, h=84, size=17, dx=70, color=RED)
+    elif _in(u, 7.4, 10.8):
+        S.say_at(p, hd, "Ich bin nur ein Strichmännchen!", w=290, h=80, size=17, dx=40)
+    return "Demo: Menschen gegen Maschinen"
+
+# ---------------------------------------------------------------- Cosplay / LARP
+def idle_cosplay(p, a, t, c):
+    """LARP-Pause: Eimer-Helm, Umhang, Schaumstoffschwert gegen einen Pappdrachen."""
+    u, _ = _slot(a, t)
+    sw = max(0.0, math.sin(t * 3.0)) if _in(u, 2, 10) else 0.0
+    hx0 = 150
+    hit = sw > 0.9
+    dsh = 3 * math.sin(t * 20) if hit else 0
+    dead = u >= 10
+    # Drache aus Pappe
+    dx0 = 62 + dsh
+    ang = 0.0 if not dead else -1.4
+    cr = p.cr
+    cr.save()
+    cr.translate(dx0 + 25, FLOOR)
+    cr.rotate(ang * (0 if not dead else 1) * min(1, (u - 10) / 0.8) if dead else 0)
+    cr.translate(-(dx0 + 25), -FLOOR)
+    p.rect(dx0, FLOOR - 34, 54, 34, lw=2.0, fill=(0.82, 0.72, 0.55))
+    p.rect(dx0 + 50, FLOOR - 54, 24, 20, lw=2.0, fill=(0.82, 0.72, 0.55))
+    p.poly([(dx0 + 8, FLOOR - 34), (dx0 + 20, FLOOR - 68), (dx0 + 34, FLOOR - 34)], closed=True, w=1.6, fill=(0.9, 0.8, 0.6))
+    p.circle(dx0 + 62, FLOOR - 46, 2.2, w=1.2, fill=INK)
+    p.curve([(dx0, FLOOR - 20), (dx0 - 14, FLOOR - 26 + 3 * math.sin(t * 4)), (dx0 - 20, FLOOR - 40)], w=2.0)
+    if not dead:
+        for i in range(4):
+            fk = (t * 1.4 + i / 4) % 1
+            p.curve([(dx0 + 74, FLOOR - 44), (dx0 + 82 + 10 * fk, FLOOR - 48 - 3 * fk), (dx0 + 92 + 14 * fk, FLOOR - 44 + 4 * math.sin(i + t * 9))], w=1.6, color=RED)
+    cr.restore()
+    p.text("Pappe", dx0 + 27, FLOOR - 12, 11, align="center", color=GRAY, hand=True, upper=False)
+    # Ritter
+    def hands(sh):
+        return ((sh[0] - 26 - 16 * sw, sh[1] - 4 + 28 * sw), (sh[0] - 10, sh[1] + 16))
+    cape_x = hx0 + 8
+    p.poly([(cape_x, FLOOR - 2 * LEG - 38 + 40), (cape_x + 22 + 3 * math.sin(t * 3), FLOOR - 12), (cape_x + 8, FLOOR - 4)], closed=True, w=1.6, color=RED, fill=(1.0, 0.85, 0.85), amp=0)
+    f, sh = _actor(p, hx0, t, s=1.0, flip=False, color=INK, hands=hands, lean=-6 * sw, hip_dy=0)
+    hx, hy = f["head"]
+    p.poly([(hx - 12, hy - 4), (hx + 12, hy - 4), (hx + 10, hy + 14), (hx - 10, hy + 14)], closed=True, w=1.8, fill=(0.88, 0.88, 0.9), amp=0)   # Eimer
+    p.line(hx - 9, hy + 4, hx + 9, hy + 4, w=2.4, color=INK, amp=0)
+    hnd = f["hl"]
+    tip = (hnd[0] - 40 * math.cos(0.5 - 0.9 * sw), hnd[1] - 40 * math.sin(0.5 - 0.9 * sw) * (1 if sw < 0.5 else 0.2) - 4)
+    p.line(*hnd, *tip, w=5, color=(0.6, 0.6, 0.65), amp=0)
+    p.line(*hnd, *tip, w=1.6, color=INK, amp=0)
+    p.line(hnd[0] - 2, hnd[1] - 7, hnd[0] + 2, hnd[1] + 7, w=3.0, amp=0)
+    p.circle(f["hr"][0] + 4, f["hr"][1] + 2, 12, w=2.0, fill=(0.9, 0.9, 1.0))                       # Schild
+    if hit:
+        p.text("BOING!", dx0 + 60, FLOOR - 78, 18, align="center", color=RED, hand=True)
+    if _in(u, 1, 4):
+        S.say_at(p, f["head"], "Für Rohan! Äh… für den Merge!", w=280, h=84, size=17, dx=0)
+    elif dead and u < 13:
+        S.say_at(p, f["head"], "Der Drache ist besiegt!", w=240, h=70, size=17, dx=0)
+    return "LARP-Pause: Ritter gegen Pappdrache"
+
+# ---------------------------------------------------------------- Tai Chi
+def idle_taichi(p, a, t, c):
+    """Tai Chi: tiefe Hocke, langsam fließende Arme um eine Qi-Kugel."""
+    fx = 130
+    ph = t * 0.7
+    hip_y = _stand_hip() + 9
+    sh = Pen.anchors(fx, hip_y)["sh"]
+    hl = (fx - 22 + 18 * math.cos(ph), sh[1] + 20 + 16 * math.sin(ph))
+    hr = (fx - 22 + 18 * math.cos(ph + math.pi * 0.8), sh[1] + 20 + 16 * math.sin(ph + math.pi * 0.8))
+    f = p.figure(fx, hip_y, hands=(hl, hr), feet=((fx - 24, FLOOR), (fx + 24, FLOOR)), eyes="dots", splay=True)
+    bx, by = fx - 22, sh[1] + 20
+    p.arc(bx, by, 12 + 2 * math.sin(ph), 0, 6.2, w=1.3, color=BLUE)
+    for i in range(3):
+        k = (t * 0.3 + i / 3) % 1
+        p.arc(bx, by, 14 + k * 24, ph, ph + 1.2, w=1.0, color=GRAY)
+    word = "einatmen…" if math.sin(ph) > 0 else "ausatmen…"
+    p.text(word, fx + 54, f["head"][1] - 26, 15, align="center", color=GRAY, hand=True, upper=False)
+    return "Tai Chi: Kontext fließen lassen"
+
+# ---------------------------------------------------------------- Karate
+def idle_karate(p, a, t, c):
+    """Karate: Stirnband, Kiai und ein Brett, das beim Tritt zerbricht."""
+    cyc = t % 4.5
+    fx = 135
+    hip_y = _stand_hip() + 5
+    bx = 52
+    kick = _in(cyc, 1.9, 2.5)
+    broken = cyc >= 2.2
+    sh = Pen.anchors(fx, hip_y)["sh"]
+    if kick:
+        foot = (fx - 56, hip_y + 4)
+        feet = ((fx - 10, FLOOR), foot)
+        hands = ((sh[0] - 22, sh[1] + 6), (sh[0] + 10, sh[1] + 14))
+    else:
+        feet = ((fx - 22, FLOOR), (fx + 20, FLOOR))
+        hands = ((sh[0] - 22, sh[1] - 6 + 3 * math.sin(t * 6)), (sh[0] - 10, sh[1] + 10))
+    f = p.figure(fx, hip_y, hands=hands, feet=feet, eyes="dots" if kick else None, lean=-4 if kick else 4)
+    hx, hy = f["head"]
+    p.line(hx - 13, hy - 5, hx + 13, hy - 5, w=2.6, color=RED, amp=0)                                 # Stirnband
+    p.line(hx + 13, hy - 5, hx + 22, hy - 1 + 3 * math.sin(t * 6), w=2.0, color=RED, amp=0)
+    p.line(fx - 5, hip_y - 20, fx + 5, hip_y - 14, w=3.4, amp=0)                                      # schwarzer Gürtel
+    # Brett auf zwei Blöcken
+    p.rect(bx - 22, FLOOR - 16, 14, 16, lw=1.8, fill=PAPER)
+    p.rect(bx + 8, FLOOR - 16, 14, 16, lw=1.8, fill=PAPER)
+    if not broken:
+        p.line(bx - 26, FLOOR - 19, bx + 26, FLOOR - 19, w=5, color=(0.7, 0.5, 0.3), amp=0)
+    else:
+        d = min(1.0, (cyc - 2.2) / 0.6)
+        p.line(bx - 26, FLOOR - 19, bx - 2, FLOOR - 19 + 10 * d, w=5, color=(0.7, 0.5, 0.3), amp=0)
+        p.line(bx + 26, FLOOR - 19, bx + 2, FLOOR - 19 + 10 * d, w=5, color=(0.7, 0.5, 0.3), amp=0)
+    if _in(cyc, 2.0, 3.6):
+        p.text("KIAI!", fx - 10, hy - 34, 22, align="center", color=RED, hand=True)
+    if _in(cyc, 2.2, 3.4):
+        p.text("krach!", bx, FLOOR - 40, 14, align="center", color=GRAY, hand=True, upper=False)
+    return "Karate: Brett statt Bug"
+
+# ---------------------------------------------------------------- Unordnung und Wildwuchs
+def _grow(a, t):
+    """0…1: wächst mit der Zeit, die der Agent schon untätig ist (unbekannt: mittel)."""
+    forced = FORCE.get("grow")
+    if forced is not None:
+        return forced
+    if a.phase != "idle":
+        return 0.0
+    ifor = a.idle_for
+    if ifor is None:
+        return 0.3
+    return max(0.0, min(1.0, (ifor - FINALE_S) / 240.0))
+
+def _leaf(p, x, y, ang, r, color=GREEN):
+    ex, ey = x + r * math.cos(ang), y + r * math.sin(ang)
+    mx, my = (x + ex) / 2, (y + ey) / 2
+    nx, ny = -math.sin(ang) * r * 0.35, math.cos(ang) * r * 0.35
+    p.poly([(x, y), (mx + nx, my + ny), (ex, ey), (mx - nx, my - ny)], closed=True, w=1.2, color=color, fill=(0.85, 0.95, 0.8), amp=0)
+
+def _web(p, x, y, dx, dy, r, t):
+    """Spinnennetz in einer Ecke; (dx, dy) = ±1 Richtung ins Bild hinein."""
+    n = 5
+    pts = []
+    for i in range(n):
+        a = (math.pi / 2) * i / (n - 1)
+        pts.append((x + dx * r * math.cos(a), y + dy * r * math.sin(a)))
+        p.line(x, y, *pts[-1], w=1.0, color=GRAY, amp=0)
+    for rr in (0.35, 0.65, 1.0):
+        prev = None
+        for i in range(n):
+            a = (math.pi / 2) * i / (n - 1)
+            q = (x + dx * r * rr * math.cos(a), y + dy * r * rr * math.sin(a) * 1.0)
+            if prev:
+                p.curve([prev, ((prev[0] + q[0]) / 2 - dx * 2, (prev[1] + q[1]) / 2 - dy * 2), q], w=0.9, color=GRAY)
+            prev = q
+
+def _vine(p, x0, y0, x1, y1, t, n, amp=9, seed=0):
+    pts = []
+    for i in range(n + 1):
+        k = i / n
+        pts.append((x0 + (x1 - x0) * k + amp * 0.4 * math.sin(k * 9 + seed), y0 + (y1 - y0) * k + amp * math.sin(k * 7 + seed * 2)))
+    p.curve(pts, w=2.0, color=GREEN)
+    for i in range(1, n + 1, 2):
+        x, y = pts[i]
+        _leaf(p, x, y, -1.0 - 0.6 * math.sin(i + t * 0.8 * 0 + seed), 9)
+        _leaf(p, x, y, 2.4 + 0.5 * math.cos(i + seed), 8)
+
+def overgrowth(p, a, t, c):
+    """Chaos auf Tisch und Boden (immer ein bisschen, wächst bei Leerlauf), Spinnweben und Pflanzen (nur bei Leerlauf)."""
+    g = _grow(a, t)
+    mess = max(0.35, g)
+    dk, fl = c.desk_y, c.floor
+    # Tisch: Tassen, Papiere, Pizzakarton
+    items = []
+    if mess > 0.05:
+        _mug(p, 338, dk)
+    if mess > 0.3:
+        p.rect(356, dk - 6, 34, 6, lw=1.4, fill=PAPER)
+        p.rect(360, dk - 11, 28, 5, lw=1.4, fill=PAPER)
+    if mess > 0.45:
+        p.rect(396, dk - 8, 38, 8, lw=1.6, fill=(0.92, 0.82, 0.62))
+        p.line(396, dk - 8, 410, dk - 14, w=1.6, amp=0)
+    if mess > 0.65:
+        _mug(p, 316, dk)
+        _mug(p, 408, dk - 8)
+    if mess > 0.85:
+        p.rect(326, dk - 18, 14, 18, lw=1.4, fill=(0.8, 0.9, 0.8))
+        p.circle(366, dk - 17, 5, w=1.2, fill=PAPER)
+    # Boden: Papierknäuel, Socke, Flaschen
+    if mess > 0.05:
+        p.circle(48, fl - 5, 5, w=1.4, fill=PAPER)
+    if mess > 0.4:
+        p.circle(84, fl - 4, 4, w=1.4, fill=PAPER)
+        p.poly([(110, fl - 2), (122, fl - 2), (124, fl - 9), (118, fl - 11), (112, fl - 7)], closed=True, w=1.4, fill=PAPER, amp=0)
+    if mess > 0.7:
+        p.rect(402, fl - 20, 8, 20, lw=1.4, fill=(0.8, 0.9, 0.8))
+        p.circle(428, fl - 5, 5, w=1.4, fill=PAPER)
+        p.circle(36, fl - 4, 4, w=1.4, fill=PAPER)
+    if a.phase != "idle" and g <= 0:
+        return
+    # Spinnweben
+    if g > 0.12:
+        r = 30 + 60 * g
+        _web(p, 20, 50, 1, 1, r, t)
+        if g > 0.5:
+            _web(p, 438, 50, -1, 1, r * 0.8, t)
+        if g > 0.7:
+            _web(p, 218, dk, 1, -1, 28, t)
+    # Pflanzen
+    if g > 0.18:
+        p.poly([(24, fl), (48, fl), (45, fl - 20), (27, fl - 20)], closed=True, w=1.8, fill=PAPER, amp=0)
+        for i, ang in enumerate((-1.9, -1.4, -1.0)):
+            L = 24 + 90 * g * (0.7 + 0.3 * i)
+            _vine(p, 36, fl - 20, 36 + 20 * math.cos(ang) * L / 24, fl - 20 + L * math.sin(ang), t, max(2, int(L / 16)), amp=5, seed=i)
+    if g > 0.35:
+        n = int(4 + 18 * g)
+        _vine(p, 50, fl - 3, 50 + 380 * min(1, g * 1.1), fl - 3, t, n, amp=6, seed=3)
+    if g > 0.55:
+        _vine(p, 426, fl, 428, dk - 4, t, 6, amp=4, seed=5)
+    if g > 0.75:
+        _vine(p, 428, dk, 296, dk - 4, t, 10, amp=4, seed=6)
+        _vine(p, 160, fl - 3, 160, fl - 48, t, 5, amp=3, seed=8)
+    if g > 0.9:
+        _vine(p, 24, 52, 24 + 160 * (g - 0.9) * 10, 52 + 8, t, 8, amp=4, seed=9)
+
+NEW_IDLE = [idle_guest, idle_postman, idle_fly, idle_desksleep, idle_paperball, idle_spin, idle_stretch, idle_phone, idle_spider, idle_trek, idle_zombies, idle_starwars, idle_lotr, idle_coffeeduo, idle_flirt, idle_kids, idle_protest, idle_cosplay, idle_taichi, idle_karate]
 
 # ====================================================================== Tabellen
 ACTS = {

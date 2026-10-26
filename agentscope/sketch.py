@@ -454,6 +454,7 @@ class Pen:
     def say(self, text, cx, cy, maxw, maxh, tail, size=18, min_size=12, max_lines=2, color=INK, bold=False, upper=False):
         """Sprechblase, an den Text angepasst (höchstens maxw×maxh), Spitze zeigt auf tail."""
         pad_x, pad_y = 16, 10
+        bold = False                        # Comicschrift in Sprechblasen nie fett (Nutzerwunsch 0.6.0)
         block = self.text_block(text, maxw - 2 * pad_x, maxh - 2 * pad_y, size, min_size, max_lines, bold=bold, upper=upper)
         w = max(70, block[2] + 2 * pad_x)
         h = block[3] + 2 * pad_y

@@ -67,3 +67,10 @@
 - Leerlauf: **Gast-Agent** (blau, Namensschild „Claude", „von nebenan" / „aus dem Nachbarpanel" / „vom Stockwerk drüber", Händeschütteln, 4 Dialogpaare) und **Postbote** (rot, Mütze, Tasche; Brief → Münzen springen heraus, „+Nk tok").
 - Ambient (alle 30 s je Panel zeitversetzt): zusätzlich Postbote läuft durchs Bild und Paket-Drohne („tok") fliegt über die Szene; 2 von 8 Slots ruhig.
 - Tests: Python 43 (`AmbientTest`; `StayInActorAreaTest` deckt die neuen Varianten ab).
+
+## Stand 0.6.0
+- Sprechblasen-Schrift nie fett (`Pen.say` erzwingt es; Test `NoBoldBubblesTest`).
+- Token-Münzen fliegen jetzt in das **Maul** (x≈418, `scene.draw_maul`), werden gekaut und zum Tacho ausgespuckt.
+- Neue Idle-Szenen (Index 18–28): Star Trek, Zombies, Star Wars, Herr der Ringe, Kaffee zu zweit, Flirt, Kinder, No-AI-Demo, Cosplay/LARP, Tai Chi, Karate. Sabber beim Schreibtisch-Nickerchen.
+- `acts.overgrowth`: Unordnung auf Tisch/Boden, Spinnweben und Pflanzen wachsen mit der Leerlaufzeit (240 s nach dem Finale bis voll); `FORCE["grow"]` für Vorschau.
+- Tests: Python 48, Node 12.

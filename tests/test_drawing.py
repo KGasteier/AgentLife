@@ -283,7 +283,7 @@ class StayInActorAreaTest(unittest.TestCase):
             ag.phase = ph
             ag.tools = [{"name": tool, "label": "x", "started": 0}] if tool else []
             kind = scene.tool_kind(tool) if tool else None
-            for v in range(1, 20):
+            for v in range(1, 30):
                 acts.FORCE["variant"] = v
                 for t in (0.5, 2.0, 3.3, 4.2, 5.5, 7.7, 9.1):
                     surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
@@ -335,3 +335,86 @@ def dance_mod():
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NoBoldBubblesTest(unittest.TestCase):
+    """Wunsch 0.6.0: Comicschrift in Sprechblasen nie fett – auch wenn ein Aufrufer bold=True übergibt."""
+
+    def test_speech_bubble_never_uses_bold(self):
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 600, 300)
+        p = Pen(cairo.Context(surf))
+        seen = []
+        orig = p._font
+
+        def spy(size, bold=False, hand=False):
+            seen.append(bold)
+            return orig(size, bold, hand)
+
+        p._font = spy
+        p.say("AAAAA!", 200, 100, 200, 70, (210, 160), size=24, bold=True)
+        scene.say_at(p, (200, 200), "ES BRENNT!", w=190, h=70, size=24, bold=True)
+        self.assertTrue(seen)
+        self.assertFalse(any(seen), "Sprechblase hat fette Schrift benutzt")
+
+
+class PopCultureAndGrowthTest(unittest.TestCase):
+    def _blank(self):
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
+        cr = cairo.Context(surf)
+        cr.set_source_rgb(1, 1, 1)
+        cr.paint()
+        return surf, cr
+
+    def _ink(self, surf):
+        surf.flush()
+        return sum(1 for b in surf.get_data() if b != 255)
+
+    def test_new_idle_scenes_registered(self):
+        from agentscope import acts
+        names = {f.__name__ for f in acts.ACTS["idle"] if f}
+        need = {"idle_trek", "idle_zombies", "idle_starwars", "idle_lotr", "idle_coffeeduo", "idle_flirt",
+                "idle_kids", "idle_protest", "idle_cosplay", "idle_taichi", "idle_karate"}
+        self.assertTrue(need <= names, need - names)
+
+    def test_overgrowth_grows_with_idle_time(self):
+        import time
+        from agentscope import acts, model
+        ag = model.demo_agents(14.0)[0]
+        ag.phase = "idle"
+        cx, fl = scene.ACTOR_X, scene.FLOOR
+        dk, st = fl - scene.DESK_H, fl - scene.SEAT_H
+        c = acts.context(cx, fl, dk, st, (cx, st - 3), cx + 70, (cx + 48, dk - 3))
+        inks = []
+        for g in (0.0, 0.5, 1.0):
+            acts.FORCE["grow"] = g
+            surf, cr = self._blank()
+            acts.overgrowth(Pen(cr), ag, 3.0, c)
+            inks.append(self._ink(surf))
+        acts.FORCE.pop("grow", None)
+        self.assertLess(inks[0], inks[1])
+        self.assertLess(inks[1], inks[2])
+
+    def test_drool_runs_down(self):
+        from agentscope import acts
+        a, b = [], []
+        for k, out in ((0.1, a), (1.0, b)):
+            surf, cr = self._blank()
+            acts._drool(Pen(cr), 100, 100, 200, k)
+            out.append(self._ink(surf))
+        self.assertLess(a[0], b[0])
+
+    def test_tokens_land_in_the_maul(self):
+        import time
+        from agentscope import model
+        ag = model.demo_agents(7.0)[0]
+        ag.phase, ag.rate = "streaming", 60
+        acts_ = __import__("agentscope.acts", fromlist=["x"])
+        acts_.FORCE["variant"] = 0
+        surf, cr = self._blank()
+        scene.draw_actor(Pen(cr), ag, 3.3)
+        self.assertTrue(hasattr(scene, "MAUL"))
+        mx, my = scene.MAUL
+        surf.flush()
+        buf, st = surf.get_data(), surf.get_stride()
+        self.assertTrue(any(buf[int(my) * st + 4 * x] != 255 for x in range(int(mx) - 25, int(mx) + 25)))
+        acts_.FORCE.pop("variant", None)

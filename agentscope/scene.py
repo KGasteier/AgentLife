@@ -352,7 +352,9 @@ def draw_actor(p: Pen, a: Agent, t: float):
         p.smoke(lap_x + 12, desk_y - 60, t)
 
     from . import acts
-    cap = acts.draw(p, a, ph, kind, t, acts.context(cx, floor, desk_y, seat_y, hip, lap_x, keys))
+    ctx = acts.context(cx, floor, desk_y, seat_y, hip, lap_x, keys)
+    acts.overgrowth(p, a, t, ctx)
+    cap = acts.draw(p, a, ph, kind, t, ctx)
     if cap is not None:
         caption(p, cap or default_caption(a, ph, tool), cx + 60, color=RED if ph == "error" else INK)
         if ph == "tool" and len(a.tools) > 1:
@@ -411,17 +413,56 @@ def draw_actor(p: Pen, a: Agent, t: float):
     else:
         seated(p, hip, lean=4, hands=((cx + 24, hip[1] - 6), (cx + 30, hip[1] - 4)))
 
-    # Token-Münzen fliegen vom Laptop zum Tacho
+    # Token-Münzen: der Laptop wirft sie in den Maul-Kopf, der kaut und spuckt sie zum Tacho wieder aus
     if a.rate > 0 and ph in ("streaming", "tool", "thinking"):
+        mx, my = MAUL
         n = int(min(10, 1 + a.rate / 10))
+        speed = 0.35 + a.rate / 300
+        chew = 0.0
+        coins = []
         for i in range(n):
-            k = (t * (0.35 + a.rate / 300) + i / n) % 1
-            x0, y0 = lap_x + 10, desk_y - 30
-            x1, y1 = 690, 200
-            x = x0 + (x1 - x0) * k
-            y = y0 + (y1 - y0) * k - math.sin(k * math.pi) * 120
-            p.coin(x, y, 7)
+            k = (t * speed + i / n) % 1
+            if k < 0.5:                                    # Flug in den Mund
+                f = k / 0.5
+                x0, y0 = lap_x + 10, desk_y - 30
+                x = x0 + (mx - 14 - x0) * f
+                y = y0 + (my - y0) * f - math.sin(f * math.pi) * 90
+                coins.append((x, y, 7))
+            elif k < 0.6:
+                chew = max(chew, 1.0)                      # gerade verschluckt
+            else:                                          # Ausspucken zum Tacho
+                f = (k - 0.6) / 0.4
+                x = mx + 14 + (690 - mx - 14) * f
+                y = my + (200 - my) * f - math.sin(f * math.pi) * 60
+                coins.append((x, y, 7 * (0.7 + 0.3 * f)))
+                if f < 0.25:
+                    chew = max(chew, 0.5)
+        draw_maul(p, mx, my, t, chew)
+        for x, y, r in coins:
+            p.coin(x, y, r)
 
+MAUL = (418.0, 204.0)
+
+def draw_maul(p: Pen, x, y, t, chew):
+    """Maul-Kopf (Seitenansicht, schaut nach rechts): Mund klappt auf/zu, Zähne, Schmatzen."""
+    gap = 0.28 + 0.38 * abs(math.sin(t * 7)) * (0.4 + chew)
+    R = 25
+    pts = [(x, y)]
+    for i in range(0, 25):
+        ang = gap + (2 * math.pi - 2 * gap) * i / 24
+        pts.append((x + R * math.cos(ang), y + R * math.sin(ang)))
+    p.poly(pts, closed=True, w=2.2, fill=PAPER, amp=0.4)
+    for sgn in (-1, 1):                                   # Zähne an Ober- und Unterkiefer
+        for j in range(3):
+            r0 = 8 + 6 * j
+            ex, ey = x + r0 * math.cos(gap), y + sgn * r0 * math.sin(gap)
+            p.line(ex, ey, ex - 1, ey - sgn * 4, w=1.2, amp=0)
+    p.circle(x - 4, y - 14, 3, w=1.4, fill=INK)
+    p.text("MAUL", x - 2, y + 40, 12, align="center", color=GRAY, hand=True)
+    if chew >= 1.0:
+        p.text("mampf", x + 6, y - 34, 12, align="center", color=GRAY, hand=True, upper=False)
+    elif chew > 0:
+        p.text("ptui", x + 40, y - 20, 12, align="center", color=GRAY, hand=True, upper=False)
 
 def default_caption(a: Agent, ph: str, tool) -> str:
     if ph == "tool" and tool:
