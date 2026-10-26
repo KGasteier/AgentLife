@@ -83,7 +83,7 @@ test("Subagent-Fortschritt aus partial details", () => {
 			details: {
 				mode: "parallel",
 				results: [
-					{ agent: "worker", task: "A", exitCode: 0, usage: { input: 10, output: 5, turns: 2 }, messages: [] },
+					{ agent: "worker", task: "A", exitCode: 0, usage: { input: 10, output: 5, turns: 2 }, messages: [{ role: "assistant", stopReason: "stop", content: [] }] },
 					{
 						agent: "worker",
 						task: "B",
@@ -116,4 +116,22 @@ test("Ereignisliste ist begrenzt", () => {
 	for (let i = 0; i < 100; i++) t.toolStart(`i${i}`, "read", { path: `f${i}` }, i);
 	assert.equal(t.state.events.length, 40);
 	assert.equal(t.state.toolCounts.read, 100);
+});
+
+test("Regression: leere tasks-Liste ist kein '0 parallel'", () => {
+	assert.equal(toolLabel("subagent", { agent: "worker", tasks: [] }), "worker");
+	const t = mk();
+	t.toolStart("s", "subagent", { agent: "worker", tasks: [], chain: [] }, 1);
+	assert.equal(t.state.subagentRuns[0].total, 1);
+	assert.equal(t.state.subagentRuns[0].mode, "single");
+});
+
+test("Regression: laufender Subagent mit exitCode 0 gilt nicht als fertig", () => {
+	const mid = { agent: "w", task: "t", exitCode: 0, usage: {}, messages: [{ role: "assistant", stopReason: "toolUse", content: [] }] };
+	const fin = { agent: "w", task: "t", exitCode: 0, usage: {}, messages: [{ role: "assistant", stopReason: "stop", content: [] }] };
+	const empty = { agent: "w", task: "t", exitCode: 0, usage: {}, messages: [] };
+	const r = parseSubagentDetails("x", { mode: "parallel", results: [mid, fin, empty] }, false, 3)!;
+	assert.deepEqual(r.agents.map((a) => a.status), ["running", "done", "running"]);
+	const f = parseSubagentDetails("x", { mode: "parallel", results: [mid, fin, empty] }, true, 3)!;
+	assert.equal(f.done, 3);
 });

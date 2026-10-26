@@ -89,8 +89,8 @@ export function toolLabel(name: string, args: any): string {
 		case "write":
 			return base(a.path ?? a.file_path);
 		case "subagent": {
-			if (Array.isArray(a.tasks)) return `${a.tasks.length} parallel`;
-			if (Array.isArray(a.chain)) return `chain of ${a.chain.length}`;
+			if (Array.isArray(a.tasks) && a.tasks.length) return `${a.tasks.length} parallel`;
+			if (Array.isArray(a.chain) && a.chain.length) return `chain of ${a.chain.length}`;
 			return clip(a.agent ?? "", 24);
 		}
 		default:
@@ -112,13 +112,24 @@ function lastToolOf(messages: any[] | undefined): string {
 	return "";
 }
 
+/**
+ * Die subagent-Erweiterung setzt exitCode erst am Ende; während des Laufs steht dort 0.
+ * Ein Teilergebnis gilt deshalb erst als fertig, wenn die letzte Nachricht eine
+ * abgeschlossene Assistent-Antwort ohne weiteren Tool-Aufruf ist.
+ */
+export function looksFinished(messages: any[] | undefined): boolean {
+	if (!Array.isArray(messages) || !messages.length) return false;
+	const m = messages[messages.length - 1];
+	return m?.role === "assistant" && !!m.stopReason && m.stopReason !== "toolUse";
+}
+
 /** Wandelt `details` des subagent-Werkzeugs (partial oder final) in einen SubagentRun. */
 export function parseSubagentDetails(toolCallId: string, details: any, finished: boolean, expected = 0): SubagentRun | null {
 	if (!details || !Array.isArray(details.results)) return null;
 	const agents: SubAgentState[] = details.results.map((r: any) => {
 		const u = r.usage ?? {};
 		const failed = r.exitCode > 0 || r.stopReason === "error" || r.stopReason === "aborted" || !!r.errorMessage;
-		const running = r.exitCode === -1 || (!finished && r.exitCode === undefined);
+		const running = !finished && !failed && (r.exitCode === -1 || r.exitCode === undefined || !looksFinished(r.messages));
 		return {
 			agent: clip(r.agent, 24),
 			task: clip(r.task, 90),
@@ -139,8 +150,8 @@ export function parseSubagentDetails(toolCallId: string, details: any, finished:
 }
 
 export function expectedSubagents(args: any): number {
-	if (Array.isArray(args?.tasks)) return args.tasks.length;
-	if (Array.isArray(args?.chain)) return args.chain.length;
+	if (Array.isArray(args?.tasks) && args.tasks.length) return args.tasks.length;
+	if (Array.isArray(args?.chain) && args.chain.length) return args.chain.length;
 	return 1;
 }
 
@@ -273,7 +284,7 @@ export class Tracker {
 		if (name === "subagent") {
 			const n = expectedSubagents(args);
 			this.subArgs.set(id, n);
-			this.upsertRun({ toolCallId: id, mode: Array.isArray(args?.tasks) ? "parallel" : Array.isArray(args?.chain) ? "chain" : "single", total: n, done: 0, running: 0, failed: 0, finished: false, agents: [] });
+			this.upsertRun({ toolCallId: id, mode: args?.tasks?.length ? "parallel" : args?.chain?.length ? "chain" : "single", total: n, done: 0, running: 0, failed: 0, finished: false, agents: [] });
 			this.event("subagent", `delegates ${label}`, now);
 		} else {
 			this.event("tool", `${name}: ${label}`, now);

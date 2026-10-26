@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Startet den agentscope-Screensaver. Ein zweiter Aufruf schließt ein offenes Fenster (Toggle).
+#   agentscope [--demo] [--windowed] [--fps N]
+# Vollbild: auf Radial-Mesh-Systemen über radialmesh-fullscreen (Layout würde das
+# Fenster sonst als neues Zentrum kacheln), ansonsten über die Hyprland-Fensterregel.
+set -euo pipefail
+here="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+cls="org.omarchy.agentscope"
+
+if command -v hyprctl >/dev/null; then
+  pid="$(hyprctl clients -j 2>/dev/null | python3 -c 'import json,sys
+for c in json.load(sys.stdin):
+    if c.get("class")=="org.omarchy.agentscope": print(c["pid"]); break' 2>/dev/null || true)"
+  if [[ -n "$pid" ]]; then kill "$pid"; exit 0; fi
+fi
+
+cd "$here"
+windowed=0
+for a in "$@"; do [[ "$a" == --windowed ]] && windowed=1; done
+if [[ $windowed == 0 ]] && command -v radialmesh-fullscreen >/dev/null; then
+  exec radialmesh-fullscreen --wait 15 -- python3 -m agentscope.app "$@"
+fi
+exec python3 -m agentscope.app "$@"
