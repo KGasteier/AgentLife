@@ -555,19 +555,216 @@ def idle_yoga(p, a, t, c):
     p.text("ommm", fx + 100, h["head"][1] - 30, 16, align="center", color=GRAY, hand=True, upper=False)
     return "Yoga zwischen zwei Prompts"
 
+
+# ====================================================================== Mehr Varianten (0.5.1)
+def _mouth(c, lean, look):
+    hd = S.seated_at(c.hip, lean=lean, look=look)["head"]
+    return hd, (hd[0] + 12, hd[1] + 4)
+
+def _fly(p, x, y, t):
+    p.circle(x, y, 2.2, w=1.4, fill=INK)
+    w = 3 + 2 * math.sin(t * 60)
+    p.line(x, y, x - 4, y - w, w=1.0, color=GRAY, amp=0)
+    p.line(x, y, x + 3, y - w, w=1.0, color=GRAY, amp=0)
+
+def idle_fly(p, a, t, c):
+    """Eine lange Zunge schnellt hervor und verspeist eine Fliege."""
+    u = t % 10.0
+    lean, look = -6, 6
+    hd, mouth = _mouth(c, lean, look)
+    ox, oy = hd[0] + 80, hd[1] - 14
+    def fp(v):
+        return (ox + 55 * math.sin(v * 2.1) + 14 * math.sin(v * 7), oy + 30 * math.sin(v * 3.1))
+    TS, TE = 4.0, 4.5                                          # Zunge schnellt: TS…TE, zieht zurück bis TE+0.5
+    target = fp(TS)
+    S.seated(p, c.hip, lean=lean, look=look, hands=((c.cx + 24, c.hip[1] - 6), (c.cx + 30, c.hip[1] - 4)))
+    if u < TS:
+        fx, fy = fp(u)
+        _fly(p, fx, fy, t)
+        if u > TS - 1.2:                                         # er hat sie im Blick, Mund geht auf
+            p.circle(mouth[0], mouth[1], 3, w=1.8, fill=INK)
+    elif u < TE + 0.5:
+        k = _ease((u - TS) / 0.12) if u < TS + 0.12 else (1.0 if u < TE else 1 - _ease((u - TE) / 0.5))
+        tip = (mouth[0] + (target[0] - mouth[0]) * k, mouth[1] + (target[1] - mouth[1]) * k)
+        pts = [(mouth[0] + (tip[0] - mouth[0]) * j / 6, mouth[1] + (tip[1] - mouth[1]) * j / 6 + 3 * math.sin(j + t * 20) * k) for j in range(7)]
+        p.curve(pts, w=4.5, color=(0.9, 0.35, 0.45))
+        p.circle(tip[0], tip[1], 4, w=1.6, color=(0.9, 0.35, 0.45), fill=(1.0, 0.6, 0.65))
+        if u >= TE:
+            _fly(p, tip[0], tip[1], t)
+        elif u < TS + 0.3:
+            p.text("schnapp!", (mouth[0] + tip[0]) / 2, mouth[1] - 20, 16, align="center", color=RED, hand=True, upper=False)
+    elif u < 8.0:
+        p.text("schmatz", mouth[0] + 30, mouth[1] - 24, 15, color=GRAY, hand=True, upper=False)
+        if 6.3 < u < 7.6:
+            p.text("(Proteine!)", mouth[0] + 46, mouth[1] - 44, 13, color=GRAY, hand=True, upper=False)
+    else:
+        fx, fy = fp(u + 20)                                       # nächste Fliege kommt an
+        _fly(p, fx, fy, t)
+    return "frisst eine Fliege – die Zunge war schneller"
+
+def idle_desksleep(p, a, t, c):
+    """Der Kopf liegt schlafend auf der Notebooktastatur."""
+    lean, look = 54, 18
+    h = S.seated(p, c.hip, lean=lean, look=look, eyes="dots",
+                 hands=((c.cx + 52, c.desk_y - 3), (c.cx + 44, c.desk_y - 3)))
+    hx, hy = h["head"]
+    breath = 1.5 * math.sin(t * 1.6)
+    p.line(c.lap_x - 40, c.desk_y - 1 - breath * 0.2, c.lap_x - 20, c.desk_y - 1, w=1.2, color=GRAY, amp=0)
+    for i in range(3):
+        k = (t * 0.4 + i / 3) % 1
+        p.text("z", hx + 10 + k * 40, hy - 24 - k * 80, 14 + k * 20, color=GRAY, hand=True)
+    p.text("zzzzzzzzzzzz", c.lap_x + 4, c.desk_y - 30, 8, color=GRAY, hand=True, upper=False, jitter=0.2)   # Tastatur-Abdruck auf dem Bildschirm
+    p.circle(hx + 12, hy + 12 + 1.5 * math.sin(t), 2.5 + 1.2 * math.sin(t * 0.7), w=1.2, color=BLUE, fill=(0.85, 0.92, 1.0))
+    return "Nickerchen auf der Tastatur"
+
+def idle_paperball(p, a, t, c):
+    """Papierkugel knüllen und in den Eimer werfen – manchmal daneben."""
+    u = t % 8.0
+    n = int(t / 8.0)
+    hit = (kh(a.key) + n) % 3 != 0
+    lean = 4
+    hd = S.seated_at(c.hip, lean=lean, look=6)["head"]
+    bin_x = 420
+    p.poly([(bin_x - 16, FLOOR - 34), (bin_x - 12, FLOOR), (bin_x + 12, FLOOR), (bin_x + 16, FLOOR - 34)], w=2.2)
+    shx, shy = S.seated_at(c.hip, lean=lean)["sh"]
+    lap = (c.cx + 26, c.hip[1] - 5)
+    start = (shx + 26, shy + 4)
+    hold = (shx + 22, shy - 10)
+    hand = _seq(u, [(0, lap), (1.2, lap), (2.0, start), (3.2, start), (3.6, hold), (3.9, (shx + 34, shy - 6)), (5.0, lap), (8, lap)])
+    S.seated(p, c.hip, lean=lean, look=6, hands=(hand, (c.cx + 30, c.hip[1] - 4)))
+    tgt = (bin_x + (0 if hit else -30), FLOOR - 36 if hit else FLOOR - 4)
+    if u < 3.8:
+        r = 2 + 6 * _ease((u - 1.2) / 1.6) if u > 1.2 else 0
+        if u < 2.0 and u > 1.2:
+            p.poly([(hand[0] - 9, hand[1] - 2), (hand[0] + 9, hand[1] - 5), (hand[0] + 8, hand[1] + 6)], closed=True, w=1.2, fill=PAPER)
+        elif u >= 2.0:
+            p.circle(hand[0], hand[1] - 5, 5.5, w=1.8, fill=PAPER)
+    elif u < 4.9:
+        k = (u - 3.8) / 1.1
+        x = hand[0] + (tgt[0] - hand[0]) * k
+        y = hand[1] + (tgt[1] - hand[1]) * k - 90 * math.sin(k * math.pi)
+        p.circle(x, y, 5.5, w=1.8, fill=PAPER)
+    else:
+        if not hit:
+            p.circle(tgt[0], tgt[1], 5.5, w=1.8, fill=PAPER)
+        if u < 6.8:
+            p.text("Treffer! 2 Punkte" if hit else "daneben…", bin_x - 50, FLOOR - 62, 15, align="center", color=BLUE if hit else RED, hand=True, upper=False)
+    for i in range(min(4, n // 2)):
+        p.circle(c.cx + 60 + 11 * i, FLOOR - 5, 5, w=1.4, fill=PAPER)
+    return "Papierkugel-Basketball"
+
+def idle_spin(p, a, t, c):
+    """Dreht sich auf dem Bürostuhl."""
+    u = t % 9.0
+    spinning = 2.0 < u < 6.0
+    flip = (int(t * 3.5) % 2 == 0) if spinning else True
+    hip = c.hip
+    feet = ((hip[0] + LEG + 3, FLOOR - (6 if spinning else 0)), (hip[0] + LEG - 5, FLOOR - (6 if spinning else 0)))
+    arms = (160, 200) if spinning else (-60, -40)
+    lean = 8 * math.sin(t * 7) if spinning else -4
+    p.figure(hip[0], hip[1], la=arms, ra=(-arms[0], -arms[1]) if spinning else (-60, -40), lean=lean, flip=flip,
+             hands=(None, None), feet=feet, splay=spinning, eyes="dots" if spinning else None)
+    if spinning:
+        for i in range(3):
+            ang = t * 8 + i * 2.1
+            p.arc(hip[0], hip[1] - 20, 60 + 8 * i, ang, ang + 1.0, w=1.3, color=GRAY)
+        p.text("wiiiii!", hip[0] + 40, hip[1] - 110, 20, align="center", color=BLUE, hand=True, upper=False)
+    return "Bürostuhl-Karussell"
+
+def idle_stretch(p, a, t, c):
+    """Streckt sich und gähnt."""
+    fx = 125
+    u = (t % 9.0) / 9.0
+    k = math.sin(math.pi * min(1.0, u * 1.6)) if u < 0.62 else 0.0
+    sway = 10 * math.sin(t * 1.4) * k
+    an = Pen.anchors(fx, _stand_hip(), lean=sway * 0.5)
+    sh, hd = an["sh"], an["head"]
+    up = 1.9 * 24 * k + 0.9 * 24 * (1 - k)
+    hands = ((sh[0] - 8 * k - 14 * (1 - k), sh[1] - up * k + 36 * (1 - k)), (sh[0] + 8 * k + 14 * (1 - k), sh[1] - up * k + 36 * (1 - k)))
+    h = p.figure(fx, _stand_hip(), lean=sway * 0.5, hands=hands, splay=True, feet=((fx - 10, FLOOR), (fx + 10, FLOOR)), eyes="dots")
+    if k > 0.5:
+        p.circle(h["head"][0] + 1, h["head"][1] + 5, 4.2, w=1.6, fill=INK)
+        p.text("gääähn", h["head"][0] + 60, h["head"][1] - 20, 18, align="center", color=GRAY, hand=True, upper=False)
+    return "reckt sich nach dem Stillsitzen"
+
+def idle_phone(p, a, t, c):
+    """Scrollt durchs Handy, der Daumen wischt."""
+    lean = 14
+    hd = S.seated_at(c.hip, lean=lean, look=14)["head"]
+    ph = (hd[0] + 22, hd[1] + 22)
+    sw = (t * 2.2) % 1
+    S.seated(p, c.hip, lean=lean, look=14, hands=((ph[0] - 4, ph[1] + 12), (ph[0] + 2, ph[1] + 8)))
+    p.rect(ph[0] - 7, ph[1] - 14, 14, 26, lw=1.8, fill=PAPER)
+    for i in range(3):
+        y = ph[1] - 10 + ((i * 8 + sw * 8) % 24)
+        p.line(ph[0] - 4, y, ph[0] + 4, y, w=1, color=GRAY, amp=0)
+    p.text("nur noch ein Post…", ph[0] + 50, ph[1] - 36, 14, align="center", color=GRAY, hand=True, upper=False)
+    return "Doomscrolling in der Wartezeit"
+
+def idle_spider(p, a, t, c):
+    """Eine Spinne seilt sich ab, der Agent schaut ihr zu."""
+    d = _ease(((t % 10) - 0.5) / 3.0) * (1 - _ease(((t % 10) - 7.0) / 2.5))
+    lean = -8
+    hd = S.seated_at(c.hip, lean=lean, look=-6)["head"]
+    S.seated(p, c.hip, lean=lean, look=-6, hands=((c.cx + 24, c.hip[1] - 6), (c.cx + 30, c.hip[1] - 4)))
+    sx, sy = hd[0] + 4, 60 + (hd[1] - 62 - 60) * d
+    p.line(sx, 46, sx, sy, w=1.0, color=GRAY, amp=0)
+    p.circle(sx, sy + 4, 4, w=1.6, fill=INK)
+    for i in range(4):
+        for e in (-1, 1):
+            p.line(sx, sy + 4, sx + e * 9, sy + 1 + i * 2.5 - 3, w=1.0, amp=0)
+    if d > 0.9:
+        S.say_at(p, hd, "Hallo, Mitbewohner.", w=200, h=64, dx=60)
+    return "bekommt Besuch von der Spinne"
+
+def think_chew(p, a, t, c):
+    """Kaut nachdenklich am Stift."""
+    hd = S.seated_at(c.hip, lean=-6, look=8)["head"]
+    mouth = (hd[0] + 12, hd[1] + 5)
+    S.seated(p, c.hip, lean=-6, look=8, hands=((mouth[0] - 2, mouth[1] + 14), (c.cx + 26, c.hip[1] - 5)))
+    p.pencil(mouth[0] + 1, mouth[1] + 2 + 1.5 * math.sin(t * 6), 100 + 8 * math.sin(t * 6), L=36)
+    S.think_at(p, hd, _frag(a, t))
+    return "kaut am Bleistift, bis die Idee kommt"
+
+def stream_sweat(p, a, t, c):
+    """Tippt so schnell, dass es spritzt."""
+    hl, hr, lean, look = S.typing_hands(t * 1.8, max(a.rate, 80), c.keys)
+    h = S.seated(p, c.hip, lean=lean + 4, look=look, hands=(hl, hr))
+    hx, hy = h["head"]
+    for i in range(3):
+        k = (t * 1.3 + i / 3) % 1
+        p.circle(hx - 8 - 14 * k, hy - 12 + 36 * k * k, 2.4 - k, w=1.2, color=BLUE, fill=(0.85, 0.92, 1.0))
+    for i in range(3):
+        p.line(hl[0] - 14 - 6 * i, hl[1] - 4 + 4 * i, hl[0] - 24 - 6 * i, hl[1] - 4 + 4 * i, w=1.2, color=GRAY, amp=0)
+    return "tippt, dass die Tasten qualmen"
+
+def error_headdesk(p, a, t, c):
+    """Haut verzweifelt den Kopf auf den Tisch."""
+    u = (t * 0.9) % 1.0
+    k = 1.0 if 0.7 < u < 0.82 else _ease(1 - abs(u - 0.4) / 0.4) * 0.0
+    lean = 10 + 44 * (_ease((u - 0.55) / 0.15) if u < 0.72 else 1 - _ease((u - 0.72) / 0.25))
+    h = S.seated(p, c.hip, lean=lean, look=14, eyes="x", hands=((c.cx + 52, c.desk_y - 3), (c.cx + 44, c.desk_y - 3)))
+    if lean > 48:
+        p.text("bonk!", h["head"][0] + 20, h["head"][1] - 26, 18, align="center", color=RED, hand=True, upper=False)
+        for i in (-1, 0, 1):
+            p.line(h["head"][0] + 10, h["head"][1] - 10, h["head"][0] + 10 + 14 * i, h["head"][1] - 24, w=1.3, color=GRAY, amp=0)
+    return a.last_error or "Fehler"
+
+NEW_IDLE = [idle_fly, idle_desksleep, idle_paperball, idle_spin, idle_stretch, idle_phone, idle_spider]
+
 # ====================================================================== Tabellen
 ACTS = {
-    "thinking": [None, think_pace, think_back, think_yoyo],
-    "streaming": [None, stream_coffee, stream_groove],
+    "thinking": [None, think_pace, think_back, think_yoyo, think_chew],
+    "streaming": [None, stream_coffee, stream_groove, stream_sweat],
     "compacting": [None, compact_suitcase],
-    "error": [None, error_run, error_extinguisher],
+    "error": [None, error_run, error_extinguisher, error_headdesk],
     "retrying": [None, retry_bell, retry_peek],
     "bash": [None, bash_terminal, bash_crank],
     "read": [None, read_scroll, read_aloud],
     "write": [None, write_tablet, write_board],
     "subagent": [None, sub_flag, sub_bell],
     "other": [None, other_binoculars],
-    "idle": [None, idle_news, idle_coffee, idle_juggle, idle_plant, idle_plane, idle_visitor, idle_bird, idle_yoga],
+    "idle": [None, idle_news, idle_coffee, idle_juggle, idle_plant, idle_plane, idle_visitor, idle_bird, idle_yoga] + NEW_IDLE,
 }
 
 def draw(p: Pen, a, ph: str, kind: str | None, t: float, c) -> str | None:

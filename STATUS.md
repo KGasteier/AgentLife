@@ -56,3 +56,9 @@
 - Alles liegt auf der dynamischen Ebene; Rechenzeit pro Frame im Rauschen der VM unverändert.
 - Tests: Python 40 (neu `VarietyTest`), Node unverändert.
 - Offen: Siegestanz erst nach beobachtetem Übergang (nicht bei Start im Leerlauf); Log-Fallback erkennt ihn über die History ebenfalls.
+
+## Stand 0.5.1 – weitere Varianten
+- Leerlauf (+7): Zunge schnappt Fliege, Kopf schlafend auf der Tastatur (Zzz, Sabberbläschen), Papierkugel-Basketball (Treffer/daneben, Punktestand), Bürostuhl-Karussell, Strecken+Gähnen, Handy-Doomscrolling, Spinne seilt sich ab (Dialog).
+- Denken: am Stift kauen. Tippen: Schweißtropfen. Fehler: Kopf auf den Tisch (bonk).
+- Regressionstest `StayInActorAreaTest`: keine Variante malt in den Kontextglas-Bereich (x ≥ 452); er schlug beim ersten Papierkorb an.
+- Tests: Python 41.

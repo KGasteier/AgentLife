@@ -267,6 +267,43 @@ class VarietyTest(unittest.TestCase):
             scene.render(cairo.Context(surf), 1000, 560, [], 3.0, None)
         a.FORCE.clear()
 
+class StayInActorAreaTest(unittest.TestCase):
+    """Regression 0.5.1: der Papierkorb stand über dem Kontextglas (x≈475). Varianten bleiben links von x=450."""
+
+    def test_no_variant_paints_into_the_jar_area(self):
+        import time
+        from agentscope import acts, model
+        ag = model.demo_agents(14.0)[0]
+        ag.idle_since = time.time() - 100
+        ag.retry = {"attempt": 1, "max": 3, "error": "x"}
+        bad = []
+        cases = [(ph, None) for ph in ("thinking", "streaming", "compacting", "error", "retrying", "idle")]
+        cases += [("tool", n) for n in ("bash", "read", "edit", "subagent", "grep")]
+        for ph, tool in cases:
+            ag.phase = ph
+            ag.tools = [{"name": tool, "label": "x", "started": 0}] if tool else []
+            kind = scene.tool_kind(tool) if tool else None
+            for v in range(1, 12):
+                acts.FORCE["variant"] = v
+                for t in (0.5, 2.0, 3.3, 4.2, 5.5, 7.7, 9.1):
+                    surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
+                    cr = cairo.Context(surf)
+                    cr.set_source_rgb(1, 1, 1)
+                    cr.paint()
+                    cx, fl = scene.ACTOR_X, scene.FLOOR
+                    dk, st = fl - scene.DESK_H, fl - scene.SEAT_H
+                    c = acts.context(cx, fl, dk, st, (cx, st - 3), cx + 70, (cx + 48, dk - 3))
+                    acts.draw(Pen(cr), ag, ph, kind, t, c)
+                    surf.flush()
+                    buf, stride = surf.get_data(), surf.get_stride()
+                    for y in range(0, 560, 2):
+                        row = buf[y * stride + 452 * 4: y * stride + 700 * 4]
+                        if any(b != 255 for b in row):
+                            bad.append((ph, tool, v, t))
+                            break
+        acts.FORCE.clear()
+        self.assertEqual(sorted(set((b[0], b[1], b[2]) for b in bad), key=str), [])
+
 def dance_mod():
     from agentscope import dance
     return dance
