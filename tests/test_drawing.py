@@ -283,7 +283,7 @@ class StayInActorAreaTest(unittest.TestCase):
             ag.phase = ph
             ag.tools = [{"name": tool, "label": "x", "started": 0}] if tool else []
             kind = scene.tool_kind(tool) if tool else None
-            for v in range(1, 12):
+            for v in range(1, 20):
                 acts.FORCE["variant"] = v
                 for t in (0.5, 2.0, 3.3, 4.2, 5.5, 7.7, 9.1):
                     surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
@@ -303,6 +303,31 @@ class StayInActorAreaTest(unittest.TestCase):
                             break
         acts.FORCE.clear()
         self.assertEqual(sorted(set((b[0], b[1], b[2]) for b in bad), key=str), [])
+
+class AmbientTest(unittest.TestCase):
+    def test_ambient_creatures_all_appear_and_stay_left_of_the_jar(self):
+        from agentscope import acts
+        kinds = set()
+        for key in ("a", "b", "c", "d", "e", "f"):
+            for slot in range(12):
+                for u in range(4, 28, 2):
+                    t = slot * acts.AMBIENT_SLOT_S + u + 4
+                    surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
+                    cr = cairo.Context(surf)
+                    cr.set_source_rgb(1, 1, 1)
+                    cr.paint()
+                    acts.ambient(Pen(cr), key, t)
+                    surf.flush()
+                    buf, st = surf.get_data(), surf.get_stride()
+                    if any(b != 255 for b in buf[:st * 560]):
+                        kinds.add(int(scene._hash01(acts.kh(key), slot, 99) * 8))
+        self.assertEqual(kinds, {0, 1, 2, 3, 4, 5})
+
+    def test_guest_and_postman_are_idle_scenes(self):
+        from agentscope import acts
+        names = {f.__name__ for f in acts.ACTS["idle"] if f}
+        self.assertTrue({"idle_guest", "idle_postman"} <= names)
+        self.assertIn("Claude", acts.GUESTS[0][0])
 
 def dance_mod():
     from agentscope import dance

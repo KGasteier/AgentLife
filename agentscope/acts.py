@@ -487,6 +487,141 @@ def idle_plane(p, a, t, c):
             _plane(p, x, y, ang)
     return "faltet Papierflieger und fliegt sie"
 
+
+# ====================================================================== Besuch (0.6.0)
+def _arrive(u):
+    """Besucher läuft 0–3 s ein, steht bis 11 s, geht 11–14 s. → (x, geht?, blickt nach rechts?)"""
+    if u < 3:
+        return 24 + 86 * _ease(u / 3.0), True, True
+    if u < 11:
+        return 110, False, True
+    return 110 - 100 * _ease((u - 11) / 3.0), True, False
+
+def _visitor(p, vx, t, walking, flip, hands_fn=None, color=BLUE):
+    s = 0.9
+    hip_y = FLOOR - 2 * LEG * s + 0.5
+    feet = _walk_feet(vx, t * 6, stance=8 * s, step=11 * s, lift=6) if walking else ((vx - 8, FLOOR), (vx + 8, FLOOR))
+    sh = Pen.anchors(vx, hip_y, s=s, flip=flip)["sh"]
+    hands = hands_fn(sh) if hands_fn else ((sh[0] + 8, sh[1] + 32), (sh[0] + 2, sh[1] + 34))
+    return p.figure(vx, hip_y, s=s, flip=flip, feet=feet, hands=hands, color=color), sh
+
+def _sitter(p, a, c, turn):
+    S.seated(p, c.hip, lean=-8, look=-turn, hands=((c.cx + 24, c.hip[1] - 6), (c.cx + 30, c.hip[1] - 4)))
+    return S.seated_at(c.hip, lean=-8, look=-turn)["head"]
+
+GUESTS = [("Claude", "von nebenan"), ("Claude", "aus dem Nachbarpanel"), ("Claude", "vom Stockwerk drüber")]
+GUEST_TALK = [
+    ("Hallo, ich bin {n} {w}.", "Hallo! Ich bin hier der mit dem vollen Kontext."),
+    ("Hast du mal 'n Token übrig?", "Nur wenn du mir einen Bug abnimmst."),
+    ("Bei uns drüben läuft gerade alles.", "Bei mir auch. Nur nicht gut."),
+    ("Darf ich kurz bei dir kompaktieren?", "Mach's dir bequem. Bring Kaffee mit."),
+]
+
+def idle_guest(p, a, t, c):
+    """Ein zweiter Agent (blau, mit Namensschild) stellt sich vor und plaudert."""
+    u = t % IDLE_SLOT_S
+    n = int(t / IDLE_SLOT_S)
+    name, where = GUESTS[(kh(a.key) + n) % len(GUESTS)]
+    la, lb = GUEST_TALK[(kh(a.key) + n) % len(GUEST_TALK)]
+    vx, walking, flip = _arrive(u)
+    shake = 4.5 <= u < 7.5
+    def hf(sh):
+        if 3 <= u < 4.2:
+            return ((sh[0] + 18, sh[1] - 34 + 6 * math.sin(t * 8)), (sh[0] + 4, sh[1] + 32))
+        if shake:
+            return ((sh[0] + 30, sh[1] + 16 + 5 * math.sin(t * 9)), (sh[0] + 4, sh[1] + 32))
+        return ((sh[0] + 8, sh[1] + 32), (sh[0] + 2, sh[1] + 34))
+    vf, sh = _visitor(p, vx, t, walking, flip, hf)
+    p.rect(vx - 14, sh[1] + 10, 28, 12, lw=1.2, color=BLUE, fill=PAPER)
+    p.text(name, vx, sh[1] + 12, 9, align="center", color=BLUE, hand=True, upper=False, bold=True)
+    hd = _sitter(p, a, c, 18 if 3 <= u < 11 else 0)
+    if 3 <= u < 4.2:
+        S.say_at(p, vf["head"], "Hallo!", w=150, h=60, dx=40, color=BLUE)
+    elif 4.2 <= u < 7.5:
+        S.say_at(p, vf["head"], la.format(n=name, w=where), w=290, h=90, size=17, dx=70, color=BLUE)
+    elif 7.5 <= u < 11:
+        S.say_at(p, hd, lb, w=290, h=90, size=17, dx=40)
+    return f"{name} {where} schaut kurz vorbei"
+
+def _envelope(p, x, y, w=22, h=15, color=INK):
+    p.rect(x - w / 2, y - h / 2, w, h, lw=1.6, color=color, fill=PAPER)
+    p.line(x - w / 2, y - h / 2, x, y + 1, w=1.2, color=color, amp=0)
+    p.line(x + w / 2, y - h / 2, x, y + 1, w=1.2, color=color, amp=0)
+
+def _postman_fig(p, vx, t, walking, flip, hands_fn=None):
+    vf, sh = _visitor(p, vx, t, walking, flip, hands_fn, color=RED)
+    hx, hy = vf["head"]
+    p.poly([(hx - 11, hy - 6), (hx + 11, hy - 6), (hx + 8, hy - 15), (hx - 8, hy - 15)], closed=True, w=1.8, color=RED, fill=(1.0, 0.85, 0.85))
+    p.line(hx + 4 * (1 if flip else -1), hy - 6, hx + 16 * (1 if flip else -1), hy - 4, w=1.8, color=RED, amp=0)
+    d = -1 if flip else 1
+    p.rect(vx + d * 12 - 8, sh[1] + 16, 16, 20, lw=1.8, color=RED, fill=(1.0, 0.9, 0.9))
+    p.line(sh[0], sh[1] + 2, vx + d * 14, sh[1] + 16, w=1.4, color=RED, amp=0)
+    return vf, sh
+
+def idle_postman(p, a, t, c):
+    """Der Postbote bringt einen Brief mit Tokens; beim Öffnen springen Münzen heraus."""
+    u = t % IDLE_SLOT_S
+    n = int(t / IDLE_SLOT_S)
+    amount = (3 + (kh(a.key) + n) % 7) * 4
+    vx, walking, flip = _arrive(u)
+    holding = u < 5.2
+    def hf(sh):
+        if 3 <= u < 5.2:
+            return ((sh[0] + 30, sh[1] + 18), (sh[0] + 4, sh[1] + 32))
+        if u < 3:
+            return ((sh[0] + 10, sh[1] + 24), (sh[0] + 2, sh[1] + 34))
+        return ((sh[0] + 8, sh[1] + 32), (sh[0] + 2, sh[1] + 34))
+    vf, sh = _postman_fig(p, vx, t, walking, flip, hf)
+    if u < 5.2 and u >= 3:
+        _envelope(p, vx + 36, sh[1] + 16, color=RED)
+    got = 5.2 <= u
+    hd_pos = S.seated_at(c.hip, lean=-6, look=-14)["head"]
+    lap = (c.cx + 26, c.hip[1] - 5)
+    if 5.2 <= u < 8.5:
+        hand = (c.cx + 40, c.hip[1] - 16 - 6 * math.sin((u - 5.2) * 5))
+    else:
+        hand = lap
+    _sitter_hand = (hand, (c.cx + 30, c.hip[1] - 4))
+    S.seated(p, c.hip, lean=-6, look=-14 if 3 <= u < 11 else 0, hands=_sitter_hand)
+    if 3 <= u < 5.2:
+        S.say_at(p, vf["head"], "Post für dich!", w=230, h=70, dx=60, color=RED)
+    if 5.2 <= u < 8.5:
+        _envelope(p, hand[0] + 4, hand[1] - 8)
+    if 6.4 <= u < 11:
+        k = u - 6.4
+        for i in range(5):
+            kk = k - i * 0.25
+            if kk > 0:
+                p.coin(hand[0] + 4 + 14 * (i - 2) * min(1, kk), hand[1] - 20 - 62 * min(kk, 1.6) + 18 * kk * kk, r=6, color=INK)
+        p.text(f"+{amount}k tok", hand[0] + 30, hand[1] - 100, 20, align="center", color=BLUE, hand=True, upper=False, bold=True)
+    if 8.5 <= u < 11:
+        S.say_at(p, hd_pos, "Danke! Quittung?", w=230, h=70, dx=40)
+    elif 5.2 <= u < 6.4:
+        S.say_at(p, hd_pos, "Oh, Tokens!", w=200, h=64, dx=40)
+    return f"Postbote liefert {amount}k Tokens"
+
+def _postman_walk(p, x, d, t):
+    s = 0.7
+    hip_y = FLOOR - 2 * LEG * s + 0.5
+    feet = _walk_feet(x, t * 7, stance=7 * s, step=10 * s, lift=5)
+    sh = Pen.anchors(x, hip_y, s=s, flip=d > 0)["sh"]
+    f = p.figure(x, hip_y, s=s, flip=d > 0, feet=feet, hands=((sh[0] + d * 14, sh[1] + 20), (sh[0] - d * 6, sh[1] + 26)), color=RED)
+    hx, hy = f["head"]
+    p.poly([(hx - 8, hy - 4), (hx + 8, hy - 4), (hx + 6, hy - 11), (hx - 6, hy - 11)], closed=True, w=1.5, color=RED, fill=(1.0, 0.85, 0.85))
+    p.rect(x - d * 9 - 6, sh[1] + 10, 12, 15, lw=1.5, color=RED, fill=(1.0, 0.9, 0.9))
+    _envelope(p, sh[0] + d * 17, sh[1] + 18, 14, 10, color=RED)
+
+def _drone(p, x, y, t):
+    p.rect(x - 11, y - 4, 22, 8, lw=1.8, fill=PAPER)
+    for e in (-1, 1):
+        p.line(x + e * 11, y - 4, x + e * 11, y - 9, w=1.4, amp=0)
+        w = 12 * math.cos(t * 30)
+        p.line(x + e * 11 - w, y - 9, x + e * 11 + w, y - 9, w=1.6, amp=0)
+    p.line(x - 5, y + 4, x - 5, y + 14, w=1.0, color=GRAY, amp=0)
+    p.line(x + 5, y + 4, x + 5, y + 14, w=1.0, color=GRAY, amp=0)
+    p.rect(x - 9, y + 14, 18, 13, lw=1.8, fill=(0.93, 0.85, 0.7))
+    p.text("tok", x, y + 15, 9, align="center", color=GRAY, hand=True, upper=False)
+
 VISITS = [("Läuft's?", "Läuft. Frag nicht wie."), ("Kaffee?", "Immer."), ("Schon Feierabend?", "Der Kontext sagt nein."),
           ("Ich hab dir einen Bug mitgebracht.", "Stell ihn zu den anderen."), ("Was machst du da?", "Token verbrennen. Und du?")]
 
@@ -750,7 +885,7 @@ def error_headdesk(p, a, t, c):
             p.line(h["head"][0] + 10, h["head"][1] - 10, h["head"][0] + 10 + 14 * i, h["head"][1] - 24, w=1.3, color=GRAY, amp=0)
     return a.last_error or "Fehler"
 
-NEW_IDLE = [idle_fly, idle_desksleep, idle_paperball, idle_spin, idle_stretch, idle_phone, idle_spider]
+NEW_IDLE = [idle_guest, idle_postman, idle_fly, idle_desksleep, idle_paperball, idle_spin, idle_stretch, idle_phone, idle_spider]
 
 # ====================================================================== Tabellen
 ACTS = {
@@ -824,16 +959,15 @@ def ambient(p: Pen, key: str, t: float):
     """Gelegentlich geht etwas durchs Bild (Katze, Vogel, Ballon, Schnecke) – in jedem Panel zu anderer Zeit."""
     slot = int(t / AMBIENT_SLOT_S)
     h = S._hash01(kh(key), slot, 99)
-    kind = int(h * 5)
+    kind = int(h * 8)                       # 6, 7 = ruhiger Slot
     u = t - slot * AMBIENT_SLOT_S - 3 - 4 * _perm_pos(key, slot)
-    if kind > 3 or u < 0:
+    if kind > 5 or u < 0:
         return
+    d = 1 if slot % 2 else -1
     if kind == 0 and u < 16:
-        d = 1 if slot % 2 else -1
         x = (30 + 410 * u / 16) if d > 0 else (440 - 410 * u / 16)
         _cat(p, x, d, t)
     elif kind == 1 and u < 11:
-        d = 1 if slot % 2 else -1
         k = u / 11
         x = (-10 + 460 * k) if d > 0 else (450 - 460 * k)
         _bird(p, x, 84 + 10 * math.sin(k * 9), t, d)
@@ -842,6 +976,13 @@ def ambient(p: Pen, key: str, t: float):
         _balloon(p, 40 + 360 * ((kh(key) + slot) % 7) / 7, FLOOR - 20 - (FLOOR - 90) * k, t)
     elif kind == 3 and u < 24:
         _snail(p, 40 + 90 * u / 24 + 200 * (slot % 2), t)
+    elif kind == 4 and u < 14:
+        k = u / 14
+        _postman_walk(p, 20 + 420 * k if d > 0 else 440 - 420 * k, d, t)
+    elif kind == 5 and u < 12:
+        k = u / 12
+        x = (-10 + 460 * k) if d > 0 else (450 - 460 * k)
+        _drone(p, x, 74 + 8 * math.sin(k * 11), t)
 
 def _perm_pos(key, slot):
     return S._hash01(kh(key), slot, 5)

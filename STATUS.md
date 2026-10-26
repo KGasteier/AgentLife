@@ -62,3 +62,8 @@
 - Denken: am Stift kauen. Tippen: Schweißtropfen. Fehler: Kopf auf den Tisch (bonk).
 - Regressionstest `StayInActorAreaTest`: keine Variante malt in den Kontextglas-Bereich (x ≥ 452); er schlug beim ersten Papierkorb an.
 - Tests: Python 41.
+
+## Stand 0.5.2 – Besuch und Ambient
+- Leerlauf: **Gast-Agent** (blau, Namensschild „Claude", „von nebenan" / „aus dem Nachbarpanel" / „vom Stockwerk drüber", Händeschütteln, 4 Dialogpaare) und **Postbote** (rot, Mütze, Tasche; Brief → Münzen springen heraus, „+Nk tok").
+- Ambient (alle 30 s je Panel zeitversetzt): zusätzlich Postbote läuft durchs Bild und Paket-Drohne („tok") fliegt über die Szene; 2 von 8 Slots ruhig.
+- Tests: Python 43 (`AmbientTest`; `StayInActorAreaTest` deckt die neuen Varianten ab).
