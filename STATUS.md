@@ -1,5 +1,16 @@
 # STATUS
 
+## Stand 0.8.0
+- **Farbe nur im Titelkasten:** Die Umrissfarbe je Harness sitzt jetzt ausschließlich im Beschriftungskasten (`scene.harness_tint` als Füllung, `scene.harness_ink` als Rahmen/Text). Alle Skizzenlinien bleiben schwarz; `Pen.ink` wird nicht mehr gesetzt. Regressionstest `Wunsch080Test.test_regression_only_the_title_box_is_tinted`.
+- **Titel trägt immer Sitzungsinfo:** Ohne Skill und Sitzungsnamen zeigt der Titel statt „?“ eine kurze Sitzungskennung (`scene.session_label` aus dem Agent-Schlüssel). Regressionstest `test_regression_title_always_carries_session_info`.
+- **Maul gespiegelt und farbig:** Das Maul sitzt rechts neben „gesamt gefressen…“ (`MAUL = (806, 150)`) und öffnet nach links. Gelbe Tokens fliegen hinein (`scene.TOK_IN`), grüne kommen oben wieder heraus (`scene.TOK_OUT`); der Strom bleibt lokal im Tacho-Bereich. Regressionstest `test_regression_tokens_are_yellow_in_and_green_out`.
+- **Grundlinien-Wackeln der Comicschrift:** `Pen._laid_out`/`Pen._glyphs` setzen handgesetzte Zeichen minimal unruhig auf die Grundlinie (wie die Unterzeile). Regressionstest `test_regression_comic_font_wobbles_on_the_baseline`.
+- **Reihenfolge variiert je Lauf:** `acts.RUN_SEED` (pro Programmlauf) fließt in `variant()`, `finale_style()` und die Umgebungsfiguren (`_slot_kind`) ein – Szenen laufen nie zweimal in derselben Reihenfolge. Regressionstest `test_regression_animation_order_varies_between_runs`.
+- **Protest-Antwort:** Die KI-Gegner bekommen jetzt „Ich mach nur meinen Job.“ zu hören. Test `test_protesters_answer_ich_mach_nur_meinen_job`.
+- **`--fps 8` als Vorgabe** (vorher 10). Test `test_default_fps_is_eight`.
+- **Politur:** Karate-Tritt mit durchgehendem Bewegungsbogen und früherem Brettbruch, Pappdrache kippt weich per Ease und meldet „plumps!“, Spinnweben starten kleiner (r = 14 + 46·g), früh wachsende Ranken mit kleineren Blättern.
+- **Neue Szenen:** Memes `idle_67`, `idle_thisisfine`, `idle_distracted`; TikTok-Challenges `idle_planking`, `idle_mannequin`, `idle_icebucket` (je 3, `StayInActorAreaTest` bis `range(1, 40)`). Tests: node 12, Python 60.
+
 ## Stand 0.7.0
 - **Fremd-Harnessse:** `agentscope/harnesses.py` liest Sitzungs-Logs von **Claude Code** (`~/.claude/projects/<slug>/*.jsonl`) und **Codex** (`~/.codex/sessions/JJJJ/MM/TT/rollout-*.jsonl`) und rekonstruiert daraus Panels (`harness="claude"|"codex"`, nur außerhalb pi). `model.collect` mischt pi (live/Log) zuerst, dann Claude, dann Codex; höchstens zwei Panels je Fremd-Harness, frisch ≤ 30 min.
   - Claude: `ai-title`/`last-prompt` als Titel, `assistant.message.usage` für Kontext/Tokens/Rate, `isCompactSummary` als Kompaktierung, `is_error`-Tool-Ergebnisse als Hoppla.

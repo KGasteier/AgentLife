@@ -284,19 +284,29 @@ class Pen:
         if self._text_cached(s, x, y, size, color, bold, hand, jitter, width):
             return width
         # Schrift „kocht“ nicht mit: ruhiger Text liest sich besser und flackert nicht (Seed ohne boil)
-        r = random.Random(_seed(len(s), round(x), round(y)))
-        cx = x
-        for ch in s:
-            adv = self._adv(ch)
+        for ch, gx, gy, rot, adv in self._laid_out(s, x, y, size, jitter, hand):
             if ch != " ":
                 cr.save()
-                cr.translate(cx + adv / 2, y + r.uniform(-0.9, 0.9) * jitter * size / 18)
-                cr.rotate(r.uniform(-0.05, 0.05) * jitter)
+                cr.translate(gx, gy)
+                cr.rotate(rot)
                 cr.move_to(-adv / 2, 0)
                 cr.show_text(ch)
                 cr.restore()
-            cx += adv
         return width
+
+    def _laid_out(self, s, x, y, size, jitter, hand):
+        """Position, Versatz und Drehung je Zeichen. Die Comicschrift (hand) sitzt bewusst minimal
+        unruhig auf der Grundlinie – wie die Unterzeile –, damit sie nicht wie gesetzt wirkt."""
+        r = random.Random(_seed(len(s), round(x), round(y)))
+        out, cx = [], x
+        for ch in s:
+            adv = self._adv(ch)
+            dy = r.uniform(-0.9, 0.9) * jitter * size / 18
+            if hand:
+                dy += r.uniform(-0.6, 0.6) * size / 18      # Grundlinien-Wackeln der Handschrift
+            out.append((ch, cx + adv / 2, y + dy, r.uniform(-0.05, 0.05) * jitter, adv))
+            cx += adv
+        return out
 
     def _text_cached(self, s, x, y, size, color, bold, hand, jitter, width) -> bool:
         """Fertig gesetzte Zeile als Alpha-Maske (Gerätepixel) zwischenspeichern und nur noch blitten.
@@ -332,7 +342,7 @@ class Pen:
             c2.select_font_face(self._fkey[0], cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
             c2.set_font_size(size)
             c2.set_source_rgb(0, 0, 0)
-            self._glyphs(c2, s, 0.0, 0.0, size, jitter, x, y)
+            self._glyphs(c2, s, 0.0, 0.0, size, jitter, x, y, hand)
             if len(_MASKS) > 3000:
                 _MASKS.clear()
             hit = _MASKS[key] = (surf, ox, oy)
@@ -345,14 +355,17 @@ class Pen:
         cr.restore()
         return True
 
-    def _glyphs(self, cr, s, x0, y0, size, jitter, sx, sy):
+    def _glyphs(self, cr, s, x0, y0, size, jitter, sx, sy, hand=False):
         r = random.Random(_seed(len(s), round(sx), round(sy)))
         cx = x0
         for ch in s:
             adv = self._adv(ch)
             if ch != " ":
+                dy = r.uniform(-0.9, 0.9) * jitter * size / 18
+                if hand:
+                    dy += r.uniform(-0.6, 0.6) * size / 18     # Grundlinie der Handschrift wackelt leicht
                 cr.save()
-                cr.translate(cx + adv / 2, y0 + r.uniform(-0.9, 0.9) * jitter * size / 18)
+                cr.translate(cx + adv / 2, y0 + dy)
                 cr.rotate(r.uniform(-0.05, 0.05) * jitter)
                 cr.move_to(-adv / 2, 0)
                 cr.show_text(ch)
@@ -685,8 +698,8 @@ class Pen:
         if double:
             self.line(x + 3.6 * s, top + 5 * s, x + 10 * s, top + 11 * s, w=1.6 * s, color=color, amp=0)
 
-    def coin(self, x, y, r=7, color=INK):
-        self.circle(x, y, r, w=1.6, color=color, fill=(1.0, 0.93, 0.55))
+    def coin(self, x, y, r=7, color=INK, fill=(1.0, 0.93, 0.55)):
+        self.circle(x, y, r, w=1.6, color=color, fill=fill)
         self.text("T", x, y + r * 0.45, r * 1.3, align="center", color=color, jitter=0)
 
     def smoke(self, x, y, t, n=4, color=GRAY, scale=1.0):

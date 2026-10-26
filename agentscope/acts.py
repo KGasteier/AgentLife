@@ -9,6 +9,7 @@ Tisch. Alles hier ist beweglich (dynamische Ebene); nichts davon ist zwischenges
 from __future__ import annotations
 
 import math
+import random
 from types import SimpleNamespace
 
 from . import dance
@@ -20,6 +21,10 @@ IDLE_SLOT_S = 14.0     # so lange läuft eine Idle-Szene
 FINALE_S = 15.0        # so lange tanzt der Agent nach getaner Arbeit
 FORCE: dict = {}       # Vorschau/Tests: {"variant": n} erzwingt eine Variante
 
+# Pro Programmlauf neu: Szenen und Varianten laufen nie in derselben Reihenfolge wie beim letzten Mal.
+# Innerhalb eines Laufs bleibt die Folge stabil (kein Flackern), nur die Reihenfolge ist jedes Mal anders.
+RUN_SEED = random.randrange(1 << 30)
+
 FLOOR = S.FLOOR
 
 def kh(s: str) -> int:
@@ -27,7 +32,7 @@ def kh(s: str) -> int:
     return sum(ord(c) * (i + 1) for i, c in enumerate(s or "?"))
 
 def _perm(key: str, name: str, rnd: int, n: int) -> list[int]:
-    return sorted(range(n), key=lambda i: (S._hash01(kh(key), kh(name), rnd, i), i))
+    return sorted(range(n), key=lambda i: (S._hash01(kh(key), kh(name), rnd, i, RUN_SEED), i))
 
 def variant(key: str, name: str, t: float, n: int, period: float = VARIANT_S) -> int:
     """Variante 0…n-1 zum Zeitpunkt t: in jeder Runde eine neue Mischung, nie zweimal hintereinander gleich."""
@@ -37,7 +42,7 @@ def variant(key: str, name: str, t: float, n: int, period: float = VARIANT_S) ->
         return FORCE["variant"] % n
     slot = int(t / period)
     if n == 2:
-        return (slot + kh(key)) % 2
+        return (slot + kh(key) + RUN_SEED) % 2
     rnd, i = divmod(slot, n)
     perm = _perm(key, name, rnd, n)
     if rnd > 0 and perm[0] == _perm(key, name, rnd - 1, n)[-1]:
@@ -381,7 +386,7 @@ FINALE_TEXT = ["GESCHAFFT!", "Läuft!", "Fertig!", "Und tschüss, Bugs!"]
 FINALE_CAPS = {"hopak": "Kosakentanz auf dem Tisch", "robot": "Roboter-Tanz auf dem Tisch", "cheer": "Siegerhüpfer auf dem Tisch"}
 
 def finale_style(a) -> str:
-    return dance.FINALE_ORDER[(kh(a.key) + a.turn) % len(dance.FINALE_ORDER)]
+    return dance.FINALE_ORDER[(kh(a.key) + a.turn + RUN_SEED) % len(dance.FINALE_ORDER)]
 
 def finale(p, a, t, c):
     age = a.idle_for or 0.0
@@ -1226,7 +1231,7 @@ def idle_protest(p, a, t, c):
     if _in(u, 3.2, 7.4):
         S.say_at(p, heads[1], "Hey hey, ho ho, die KI muss weg!", w=300, h=84, size=17, dx=70, color=RED)
     elif _in(u, 7.4, 10.8):
-        S.say_at(p, hd, "Ich bin nur ein Strichmännchen!", w=290, h=80, size=17, dx=40)
+        S.say_at(p, hd, "Ich mach nur meinen Job.", w=290, h=80, size=17, dx=40)
     return "Demo: Menschen gegen Maschinen"
 
 # ---------------------------------------------------------------- Cosplay / LARP
@@ -1240,12 +1245,14 @@ def idle_cosplay(p, a, t, c):
     dead = u >= 10
     # Drache aus Pappe
     dx0 = 62 + dsh
-    ang = 0.0 if not dead else -1.4
+    tip = max(0.0, min(1.0, (u - 10) / 1.4))
+    ang = -1.45 * _ease(tip)
     cr = p.cr
-    cr.save()
-    cr.translate(dx0 + 25, FLOOR)
-    cr.rotate(ang * (0 if not dead else 1) * min(1, (u - 10) / 0.8) if dead else 0)
-    cr.translate(-(dx0 + 25), -FLOOR)
+    if ang:
+        cr.save()
+        cr.translate(dx0 + 25, FLOOR)
+        cr.rotate(ang)
+        cr.translate(-(dx0 + 25), -FLOOR)
     p.rect(dx0, FLOOR - 34, 54, 34, lw=2.0, fill=(0.82, 0.72, 0.55))
     p.rect(dx0 + 50, FLOOR - 54, 24, 20, lw=2.0, fill=(0.82, 0.72, 0.55))
     p.poly([(dx0 + 8, FLOOR - 34), (dx0 + 20, FLOOR - 68), (dx0 + 34, FLOOR - 34)], closed=True, w=1.6, fill=(0.9, 0.8, 0.6))
@@ -1255,7 +1262,10 @@ def idle_cosplay(p, a, t, c):
         for i in range(4):
             fk = (t * 1.4 + i / 4) % 1
             p.curve([(dx0 + 74, FLOOR - 44), (dx0 + 82 + 10 * fk, FLOOR - 48 - 3 * fk), (dx0 + 92 + 14 * fk, FLOOR - 44 + 4 * math.sin(i + t * 9))], w=1.6, color=RED)
-    cr.restore()
+    if ang:
+        cr.restore()
+    if dead:
+        p.text("plumps!", dx0 + 44, FLOOR - 66, 14, color=GRAY, hand=True, upper=False)
     p.text("Pappe", dx0 + 27, FLOOR - 12, 11, align="center", color=GRAY, hand=True, upper=False)
     # Ritter
     def hands(sh):
@@ -1306,13 +1316,14 @@ def idle_karate(p, a, t, c):
     fx = 135
     hip_y = _stand_hip() + 5
     bx = 52
-    kick = _in(cyc, 1.9, 2.5)
-    broken = cyc >= 2.2
+    kick = _in(cyc, 1.6, 2.5)
+    broken = cyc >= 2.15
+    kk = _ease(min(1.0, max(0.0, (cyc - 1.6) / 0.9)))      # 0…1 über den Tritt
     sh = Pen.anchors(fx, hip_y)["sh"]
     if kick:
-        foot = (fx - 56, hip_y + 4)
-        feet = ((fx - 10, FLOOR), foot)
-        hands = ((sh[0] - 22, sh[1] + 6), (sh[0] + 10, sh[1] + 14))
+        foot = (fx - 26 - 46 * kk, hip_y + 10 - 26 * kk)
+        feet = ((fx - 6, FLOOR - 6 * (1 - kk)), foot)
+        hands = ((sh[0] - 30, sh[1] + 4), (sh[0] + 12, sh[1] + 18))
     else:
         feet = ((fx - 22, FLOOR), (fx + 20, FLOOR))
         hands = ((sh[0] - 22, sh[1] - 6 + 3 * math.sin(t * 6)), (sh[0] - 10, sh[1] + 10))
@@ -1327,9 +1338,11 @@ def idle_karate(p, a, t, c):
     if not broken:
         p.line(bx - 26, FLOOR - 19, bx + 26, FLOOR - 19, w=5, color=(0.7, 0.5, 0.3), amp=0)
     else:
-        d = min(1.0, (cyc - 2.2) / 0.6)
+        d = min(1.0, (cyc - 2.15) / 0.6)
         p.line(bx - 26, FLOOR - 19, bx - 2, FLOOR - 19 + 10 * d, w=5, color=(0.7, 0.5, 0.3), amp=0)
         p.line(bx + 26, FLOOR - 19, bx + 2, FLOOR - 19 + 10 * d, w=5, color=(0.7, 0.5, 0.3), amp=0)
+    if kick and kk > 0.6:                                   # Bewegungsbogen des Fußes
+        p.arc(fx - 34, hip_y + 6, 40, -0.5, 0.5 * kk, w=1.4, color=GRAY)
     if _in(cyc, 2.0, 3.6):
         p.text("KIAI!", fx - 10, hy - 34, 22, align="center", color=RED, hand=True)
     if _in(cyc, 2.2, 3.4):
@@ -1356,8 +1369,9 @@ def _leaf(p, x, y, ang, r, color=GREEN):
     p.poly([(x, y), (mx + nx, my + ny), (ex, ey), (mx - nx, my - ny)], closed=True, w=1.2, color=color, fill=(0.85, 0.95, 0.8), amp=0)
 
 def _web(p, x, y, dx, dy, r, t):
-    """Spinnennetz in einer Ecke; (dx, dy) = ±1 Richtung ins Bild hinein."""
+    """Spinnennetz in einer Ecke; (dx, dy) = ±1 Richtung ins Bild hinein. r skaliert Fäden und Bogen."""
     n = 5
+    r = max(6.0, r)
     pts = []
     for i in range(n):
         a = (math.pi / 2) * i / (n - 1)
@@ -1372,7 +1386,8 @@ def _web(p, x, y, dx, dy, r, t):
                 p.curve([prev, ((prev[0] + q[0]) / 2 - dx * 2, (prev[1] + q[1]) / 2 - dy * 2), q], w=0.9, color=GRAY)
             prev = q
 
-def _vine(p, x0, y0, x1, y1, t, n, amp=9, seed=0):
+
+def _vine(p, x0, y0, x1, y1, t, n, amp=9, seed=0, leaf=1.0):
     pts = []
     for i in range(n + 1):
         k = i / n
@@ -1380,8 +1395,8 @@ def _vine(p, x0, y0, x1, y1, t, n, amp=9, seed=0):
     p.curve(pts, w=2.0, color=GREEN)
     for i in range(1, n + 1, 2):
         x, y = pts[i]
-        _leaf(p, x, y, -1.0 - 0.6 * math.sin(i + t * 0.8 * 0 + seed), 9)
-        _leaf(p, x, y, 2.4 + 0.5 * math.cos(i + seed), 8)
+        _leaf(p, x, y, -1.0 - 0.6 * math.sin(i + t * 0.8 * 0 + seed), 9 * leaf)
+        _leaf(p, x, y, 2.4 + 0.5 * math.cos(i + seed), 8 * leaf)
 
 def overgrowth(p, a, t, c):
     """Chaos auf Tisch und Boden (immer ein bisschen, wächst bei Leerlauf), Spinnweben und Pflanzen (nur bei Leerlauf)."""
@@ -1416,23 +1431,23 @@ def overgrowth(p, a, t, c):
         p.circle(36, fl - 4, 4, w=1.4, fill=PAPER)
     if a.phase != "idle" and g <= 0:
         return
-    # Spinnweben
+    # Spinnweben (erst klein, wachsen mit der Unordnung)
     if g > 0.12:
-        r = 30 + 60 * g
+        r = 14 + 46 * g
         _web(p, 20, 50, 1, 1, r, t)
         if g > 0.5:
             _web(p, 438, 50, -1, 1, r * 0.8, t)
         if g > 0.7:
             _web(p, 218, dk, 1, -1, 28, t)
-    # Pflanzen
+    # Pflanzen (frühe Stufe: kurze Ranke und kleine Blätter)
     if g > 0.18:
         p.poly([(24, fl), (48, fl), (45, fl - 20), (27, fl - 20)], closed=True, w=1.8, fill=PAPER, amp=0)
         for i, ang in enumerate((-1.9, -1.4, -1.0)):
             L = 24 + 90 * g * (0.7 + 0.3 * i)
-            _vine(p, 36, fl - 20, 36 + 20 * math.cos(ang) * L / 24, fl - 20 + L * math.sin(ang), t, max(2, int(L / 16)), amp=5, seed=i)
+            _vine(p, 36, fl - 20, 36 + 20 * math.cos(ang) * L / 24, fl - 20 + L * math.sin(ang), t, max(2, int(L / 16)), amp=5, seed=i, leaf=min(1.0, L / 60))
     if g > 0.35:
         n = int(4 + 18 * g)
-        _vine(p, 50, fl - 3, 50 + 380 * min(1, g * 1.1), fl - 3, t, n, amp=6, seed=3)
+        _vine(p, 50, fl - 3, 50 + 380 * min(1, g * 1.1), fl - 3, t, n, amp=6, seed=3, leaf=min(1.0, g * 2.2))
     if g > 0.55:
         _vine(p, 426, fl, 428, dk - 4, t, 6, amp=4, seed=5)
     if g > 0.75:
@@ -1441,7 +1456,151 @@ def overgrowth(p, a, t, c):
     if g > 0.9:
         _vine(p, 24, 52, 24 + 160 * (g - 0.9) * 10, 52 + 8, t, 8, amp=4, seed=9)
 
-NEW_IDLE = [idle_guest, idle_postman, idle_fly, idle_desksleep, idle_paperball, idle_spin, idle_stretch, idle_phone, idle_spider, idle_trek, idle_zombies, idle_starwars, idle_lotr, idle_coffeeduo, idle_flirt, idle_kids, idle_protest, idle_cosplay, idle_taichi, idle_karate]
+# ---------------------------------------------------------------- Memes
+def idle_67(p, a, t, c):
+    """Meme „6-7": zwei flache Hände wippen im Takt, dazu der Sprechchor."""
+    u, _ = _slot(a, t)
+    beat = math.sin(t * 3.2)
+    vx, walking, flip = _arrive(u) if u < 3 else (140, False, True)
+
+    def hf(sh):
+        return ((sh[0] + 10 - 7 * beat, sh[1] - 8), (sh[0] + 12 + 7 * beat, sh[1] + 2))
+
+    f, sh = _actor(p, vx, t, flip=flip, walking=walking, color=BLUE, hands=hf, eyes="dots")
+    hd = _host(p, c, lean=-2, look=-8, eyes="dots",
+               hands=((c.cx + 24, c.hip[1] - 26 + 16 * beat), (c.cx + 32, c.hip[1] - 4)))
+    p.text("6-7", 218 + 8 * beat, 118, 46, align="center", bold=True, color=BLUE)
+    if _in(u, 2, 6):
+        S.say_at(p, f["head"], "Sechs! Sieben!", w=230, h=70, size=18, dx=40, color=BLUE)
+    elif _in(u, 6, 10.4):
+        S.say_at(p, hd, "Ich zähle nur Tokens.", w=250, h=74, size=17, dx=40)
+    return "Meme: 6-7"
+
+
+def idle_thisisfine(p, a, t, c):
+    """Meme „This is fine": rundherum brennt es, der Agent trinkt gemütlich Kaffee."""
+    for fx, h in ((72, 42), (150, 56), (252, 44), (332, 62), (408, 38)):
+        p.flame(fx, FLOOR - 6, t + fx * 0.01, h=h)
+        p.smoke(fx + 4, FLOOR - 6 - h, t + fx * 0.02, n=2, scale=0.7)
+    mug = (c.cx + 46, c.desk_y - 2)
+    hd = _host(p, c, lean=2, look=6, eyes="dots",
+               hands=((mug[0] - 6, mug[1] - 20), (mug[0] - 4, mug[1] - 8)))
+    _mug(p, mug[0], mug[1], steam_t=t)
+    S.say_at(p, hd, "Alles in Ordnung.", w=240, h=70, size=17, dx=40)
+    return "Meme: This is fine"
+
+
+def idle_distracted(p, a, t, c):
+    """Meme „Distracted Boyfriend": der Agent schaut der vorbeigehenden Agentin nach."""
+    u, _ = _slot(a, t)
+    gx, bx0 = 96, 186
+    ox = 300 + 22 * math.sin(t * 0.8)
+    watching = _in(u, 1.5, 11)
+    fg, _ = _actor(p, gx, t, s=0.92, flip=False, color=PINK,
+                   hands=lambda sh: ((sh[0] + 8, sh[1] + 22), (sh[0] + 2, sh[1] + 24)))
+    p.text("!", fg["head"][0] + 16, fg["head"][1] - 20, 22, color=RED, hand=True)
+    hip_y = FLOOR - 2 * LEG * 0.92 + 0.5
+    shb = Pen.anchors(bx0, hip_y, s=0.92, look=30)["sh"]
+    fb = p.figure(bx0, hip_y, s=0.92, look=30 if watching else 0, eyes="dots",
+                  hands=((shb[0] + 8, shb[1] + 26), (shb[0] + 2, shb[1] + 28)),
+                  feet=((bx0 - 8, FLOOR), (bx0 + 8, FLOOR)))
+    fo, _ = _actor(p, ox, t, s=0.92, flip=False, color=PINK, walking=True,
+                   hands=lambda sh: ((sh[0] + 12, sh[1] + 24), (sh[0] + 4, sh[1] + 26)), eyes="dots")
+    for i in range(3):
+        _heart(p, fo["head"][0] + 18, fo["head"][1] - 20 - i * 14, 4)
+    if watching:
+        S.say_at(p, fb["head"], "Äh… ich schau nur kurz.", w=260, h=74, size=17, dx=40)
+    return "Meme: Distracted Developer"
+
+
+# ---------------------------------------------------------------- TikTok-Challenges
+def _phone(p, x, y, t, live=True):
+    """Handy auf Stativ, filmt die Szene (TikTok)."""
+    p.rect(x - 12, y - 22, 24, 40, lw=1.8, fill=PAPER)
+    p.text("REC", x, y - 8, 8, align="center", color=RED if live else GRAY, bold=True, upper=False)
+    if live:
+        p.circle(x + 8, y - 18, 2, w=1.0, color=RED, fill=RED)
+    for dx in (-8, 8):
+        p.line(x + dx, y + 18, x + 2 * dx, y + 44, w=1.6, amp=0)
+    p.line(x - 6, y + 30, x + 6, y + 30, w=1.2, amp=0)
+
+
+def idle_planking(p, a, t, c):
+    """TikTok-Challenge: Planking auf zwei Hockern, der Agent zählt mit."""
+    u, _ = _slot(a, t)
+    plank = _in(u, 1.8, 9.5)
+    rise = min(1.0, u / 1.8) if not plank else 1.0
+    y = FLOOR - 46 - 40 * rise
+    for hx in (78, 250):
+        p.rect(hx - 20, FLOOR - 30, 40, 6, lw=1.8, fill=PAPER)
+        for sx in (-13, 13):
+            p.line(hx + sx, FLOOR - 24, hx + sx, FLOOR, w=2.0, amp=0)
+    fx = 164
+    p.line(fx - 84, y, fx + 70, y, w=3.2, amp=0)                    # steifer Körper
+    p.circle(fx + 84, y - 2, 12, w=2.6, fill=PAPER)
+    p.circle(fx + 88, y - 4, 1.6, w=1.2, fill=INK)
+    p.line(fx - 84, y, fx - 100, y + 11, w=2.2, amp=0)              # steife Füße
+    p.line(fx - 84, y, fx - 100, y - 5, w=2.2, amp=0)
+    p.line(fx + 36, y, fx + 50, y - 18, w=2.2, amp=0)               # steife Arme
+    p.line(fx + 36, y, fx + 50, y + 16, w=2.2, amp=0)
+    _phone(p, 40, 300, t, live=plank)
+    if plank:
+        p.text("1… 2… 3…", 380, 120, 18, align="center", color=GRAY, hand=True)
+        S.say_at(p, _host(p, c, lean=-4, look=-12, eyes="dots"), "Hält! Weiter so!", w=250, h=70, size=17, dx=40)
+    else:
+        _host(p, c, lean=-4, look=-12)
+    return "TikTok: Planking auf zwei Hockern"
+
+
+def idle_mannequin(p, a, t, c):
+    """TikTok-Challenge: Mannequin – alle erstarren mitten in der Bewegung, das Handy filmt."""
+    u, _ = _slot(a, t)
+    frozen = _in(u, 2.4, 9.6)
+    tt = 2.4 if frozen else t
+    vx, walking, flip = _arrive(tt) if tt < 3 else (150, False, True)
+    f, _ = _actor(p, vx, tt, flip=flip, walking=walking and not frozen, color=BLUE, eyes="dots",
+                  hands=lambda sh: ((sh[0] + 26, sh[1] - 20), (sh[0] + 10, sh[1] + 16)))
+    _host(p, c, lean=-4, look=-10, eyes="dots",
+          hands=((c.cx + 26, c.hip[1] - 30), (c.cx + 30, c.hip[1] - 4)))
+    _phone(p, 60, 300, t, live=True)
+    if frozen:
+        p.text("FREEZE", 330, 130, 26, align="center", bold=True, color=RED)
+    else:
+        p.text("3… 2… 1…", 330, 130, 18, align="center", color=GRAY, hand=True)
+    return "TikTok: Mannequin Challenge"
+
+
+def idle_icebucket(p, a, t, c):
+    """TikTok-Challenge: Ice Bucket – der Eimer kippt, Wasser und Eis prasseln herunter."""
+    u, _ = _slot(a, t)
+    tip = _in(u, 2.6, 3.4)
+    splash = _in(u, 3.4, 5.2)
+    fx = 150
+    hip_y = _stand_hip() + 6
+    k = _ease(min(1.0, max(0.0, (u - 2.6) / 0.8)))
+    sh = Pen.anchors(fx, hip_y)["sh"]
+    ex, ey = sh[0] + 30, sh[1] - 34 + 18 * k
+    f = p.figure(fx, hip_y, eyes="x" if splash else "dots", lean=-6 + 10 * k,
+                 hands=((ex - 8, ey + 8), (ex + 10, ey + 6)),
+                 feet=((fx - 12, FLOOR), (fx + 12, FLOOR)))
+    ang = -0.3 + 2.4 * k
+    ex2, ey2 = ex + 26 * math.cos(ang), ey + 26 * math.sin(ang)
+    p.poly([(ex, ey - 18), (ex2, ey2 - 18), (ex2, ey2 + 18), (ex, ey + 18)], closed=True, w=2.4,
+           fill=(0.8, 0.86, 0.95), amp=0.4)
+    if splash:
+        for i in range(16):
+            kk = (t * 1.6 + i / 16) % 1
+            wx = ex + math.sin(i * 2.4) * 26 * kk
+            wy = ey + 26 - 120 * kk
+            p.line(wx, wy, wx + 2, wy + 8, w=1.4, color=BLUE, amp=0)
+            if i % 4 == 0:
+                p.circle(wx, wy + 10, 3.4, w=1.3, color=BLUE, fill=(0.88, 0.94, 1.0))
+        p.text("PLATSCH!", fx + 30, ey - 40, 20, align="center", color=BLUE, hand=True)
+    _host(p, c, lean=-4, look=-12, eyes="dots" if splash else None)
+    return "TikTok: Ice Bucket Challenge"
+
+
+NEW_IDLE = [idle_guest, idle_postman, idle_fly, idle_desksleep, idle_paperball, idle_spin, idle_stretch, idle_phone, idle_spider, idle_trek, idle_zombies, idle_starwars, idle_lotr, idle_coffeeduo, idle_flirt, idle_kids, idle_protest, idle_cosplay, idle_taichi, idle_karate, idle_67, idle_thisisfine, idle_distracted, idle_planking, idle_mannequin, idle_icebucket]
 
 # ====================================================================== Tabellen
 ACTS = {
@@ -1511,11 +1670,14 @@ def _snail(p, x, t):
 
 AMBIENT_SLOT_S = 30.0
 
+def _slot_kind(key: str, slot: int) -> int:
+    """Welche Umgebungsfigur läuft in diesem Zeitfenster? 6, 7 = ruhiger Slot. Je Lauf anders verteilt."""
+    return int(S._hash01(kh(key), slot, 99, RUN_SEED) * 8)
+
 def ambient(p: Pen, key: str, t: float):
     """Gelegentlich geht etwas durchs Bild (Katze, Vogel, Ballon, Schnecke) – in jedem Panel zu anderer Zeit."""
     slot = int(t / AMBIENT_SLOT_S)
-    h = S._hash01(kh(key), slot, 99)
-    kind = int(h * 8)                       # 6, 7 = ruhiger Slot
+    kind = _slot_kind(key, slot)
     u = t - slot * AMBIENT_SLOT_S - 3 - 4 * _perm_pos(key, slot)
     if kind > 5 or u < 0:
         return

@@ -15,7 +15,7 @@ Kontextfüllung, Kompaktierung und Fehlern. Mehrere Harnessse gleichzeitig:
 | Terminal | `agentscope` |
 | Demo ohne Agenten | `agentscope --demo` |
 | Fenster statt Vollbild | `agentscope --windowed` (nur `q`/`Esc` schließt) |
-| Sparsamer | `agentscope --fps 5` |
+| Sparsamer | `agentscope --fps 4` (Vorgabe: 8) |
 | PNG-Vorschau | `python3 -m agentscope.snapshot out.png [--demo]` |
 
 Beenden im Vollbild: beliebige Taste, Mausklick oder Mausbewegung (erst nach 1 s).
@@ -23,15 +23,16 @@ Beenden im Vollbild: beliebige Taste, Mausklick oder Mausbewegung (erst nach 1 s
 ## Was man sieht
 
 Jeder Agent ist ein Comic-Panel. Die Beschriftung links oben nennt den **Harness** und den
-gekürzten **Skill- bzw. Sitzungsnamen** (z. B. `pi · vaultdev`); ein dezent anderer Umriss
-unterscheidet die Harnessse (pi = Tinte, Claude Code = warm-braun, Codex = grün-blaue Tinte).
+gekürzten **Skill- bzw. Sitzungsnamen** (z. B. `pi · vaultdev`); gibt es keinen Namen, steht dort
+eine kurze Sitzungskennung. Ein dezent getönter **Titelkasten** unterscheidet die Harnessse
+(pi = grau, Claude Code = warm, Codex = grün-blau) – die **Skizzenlinien selbst bleiben schwarz**.
 
 | Bild | Bedeutung |
 |---|---|
 | Figur am Schreibtisch | Hauptagent – Pose = Phase (Denkblase mit dem Prompt, Tippen, Werkzeug, Schlafen) |
 | Hammer auf `>_`-Kiste / Buch / Bleistift / Megafon / Lupe | Werkzeug `bash` / `read` / `edit`·`write` / `subagent` / sonstige |
 | Glas „Kontext“ mit Presse | Kontextfüllung; Presse drückt + „QUETSCH!“ = Kompaktierung läuft, „GEQUETSCHT!“ = gerade fertig |
-| Tacho „TOKENS / SEC“ + fliegende Münzen | aktuelle Ausgaberate, darunter Gesamtverbrauch (in/out); „~N“ = aus Session-Logs geschätzt |
+| Tacho „TOKENS / SEC“ + Maul | aktuelle Ausgaberate, darunter Gesamtverbrauch (in/out); gelbe Token-Münzen fliegen ins Maul, grüne kommen heraus; „~N“ = aus Session-Logs geschätzt |
 | Kurve „Kontext im Zeitverlauf“ | Kontextverlauf; Sägezahn mit „quetsch“-Marken = Kompaktierungen |
 | Kleine Figuren unten + Balken | Subagents: tanzen = arbeiten (Disco, Gangnam, Twerk, Stepptanz, Irish, YMCA, Floss, Moonwalk) / Haken = fertig / rot umgefallen = Fehler; Balken = Fortschritt |
 | Brennender Laptop, „AAAAA!“ | Fehler in diesem Moment; Figur klopft an Tür „API“ = automatischer Retry |

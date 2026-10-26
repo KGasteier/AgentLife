@@ -1,6 +1,6 @@
 """Vollbild-Screensaver (GTK4 + Cairo).
 
-    python3 -m agentscope.app [--demo] [--windowed] [--fps 20]
+    python3 -m agentscope.app [--demo] [--windowed] [--fps 12]
 
 Beenden: beliebige Taste, Mausklick oder deutliche Mausbewegung (wie ein Screensaver).
 `--windowed` lässt das Fenster offen und reagiert nur auf q/Esc (zum Daneben-Arbeiten).
@@ -127,7 +127,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog="agentscope")
     ap.add_argument("--demo", action="store_true", help="synthetische Daten statt echter pi-Prozesse")
     ap.add_argument("--windowed", action="store_true", help="Fenster statt Vollbild, beenden nur mit q/Esc")
-    ap.add_argument("--fps", type=int, default=10)
+    ap.add_argument("--fps", type=int, default=8)
     a = ap.parse_args(argv)
     app = Gtk.Application(application_id=APP_ID)
     app.connect("activate", lambda ap_: Scope(ap_, a.demo, a.windowed, a.fps).present())

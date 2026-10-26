@@ -283,7 +283,7 @@ class StayInActorAreaTest(unittest.TestCase):
             ag.phase = ph
             ag.tools = [{"name": tool, "label": "x", "started": 0}] if tool else []
             kind = scene.tool_kind(tool) if tool else None
-            for v in range(1, 30):
+            for v in range(1, 40):
                 acts.FORCE["variant"] = v
                 for t in (0.5, 2.0, 3.3, 4.2, 5.5, 7.7, 9.1):
                     surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
@@ -320,7 +320,7 @@ class AmbientTest(unittest.TestCase):
                     surf.flush()
                     buf, st = surf.get_data(), surf.get_stride()
                     if any(b != 255 for b in buf[:st * 560]):
-                        kinds.add(int(scene._hash01(acts.kh(key), slot, 99) * 8))
+                        kinds.add(acts._slot_kind(key, slot))
         self.assertEqual(kinds, {0, 1, 2, 3, 4, 5})
 
     def test_guest_and_postman_are_idle_scenes(self):
@@ -418,3 +418,96 @@ class PopCultureAndGrowthTest(unittest.TestCase):
         buf, st = surf.get_data(), surf.get_stride()
         self.assertTrue(any(buf[int(my) * st + 4 * x] != 255 for x in range(int(mx) - 25, int(mx) + 25)))
         acts_.FORCE.pop("variant", None)
+
+
+class Wunsch080Test(unittest.TestCase):
+    """Wünsche 0.8.0: Farbe nur im Titelkasten, Maul rechts mit gelb/grün, Grundlinien-Wackeln,
+    nie dieselbe Reihenfolge, Protest-Antwort, neue Memes/Challenges."""
+
+    def test_regression_only_the_title_box_is_tinted(self):
+        """Regression 0.8.0: vorher wurde jede Skizzenlinie je Harness eingefärbt; jetzt nur der Titelkasten."""
+        import cairo as c
+        from agentscope import model
+        ag = model.Agent(key="k", title="Vault", source="log", harness="claude", phase="idle", updated=1.0)
+        surf = c.ImageSurface(c.FORMAT_RGB24, 1000, 560)
+        p = Pen(c.Context(surf))
+        scene.render_panel(p, ag, 3.0, None)
+        self.assertEqual(scene.INK, p.ink, "Skizzenstift darf nicht eingefärbt sein")
+        tint = scene.harness_tint(ag)
+        self.assertNotEqual(tint, (1.0, 1.0, 1.0))
+        self.assertNotEqual(tint, scene.harness_tint(model.Agent(key="k", title="t", source="log", harness="pi")))
+
+    def test_regression_title_always_carries_session_info(self):
+        """Regression 0.8.0: ohne Skill und Sitzungsnamen blieb der Titel bei „?“. Jetzt steht Sitzungsinfo dort."""
+        from agentscope import model
+        for key in ("claude:/home/kg/.claude/projects/x/3f2a9c11.jsonl", "codex:", "live:1"):
+            a = model.Agent(key=key, title="", source="log")
+            t = scene.panel_title(a)
+            self.assertNotEqual(t, "pi · ?", t)
+            self.assertTrue(len(t.split("·", 1)[1].strip()) >= 5, t)
+
+    def test_regression_tokens_are_yellow_in_and_green_out(self):
+        """Regression 0.8.0: Münzen waren alle gelb und flogen quer durchs Panel; jetzt gelb hinein, grün hinaus, lokal."""
+        import time
+        from agentscope import model
+        ag = model.demo_agents(7.0)[0]
+        ag.phase, ag.rate = "streaming", 60
+        acts_ = __import__("agentscope.acts", fromlist=["x"])
+        acts_.FORCE["variant"] = 0
+        colors = []
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
+        ctx = cairo.Context(surf)
+        ctx.set_source_rgb(1, 1, 1)
+        ctx.paint()
+        p = Pen(ctx)
+        orig = p.coin
+
+        def spy(x, y, r=7, color=scene.INK, fill=(1.0, 0.93, 0.55)):
+            colors.append((round(x), fill))
+            return orig(x, y, r, color, fill)
+
+        p.coin = spy
+        scene.draw_actor(p, ag, 3.3)
+        acts_.FORCE.pop("variant", None)
+        self.assertIn(scene.TOK_IN, [c for _, c in colors])
+        self.assertIn(scene.TOK_OUT, [c for _, c in colors])
+        self.assertTrue(all(abs(x - scene.MAUL[0]) < 90 for x, _ in colors), colors)
+
+    def test_regression_comic_font_wobbles_on_the_baseline(self):
+        """Regression 0.8.0: die Comicschrift saß exakt auf der Grundlinie und wirkte gesetzt."""
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 800, 300)
+        p = Pen(cairo.Context(surf))
+        p._font(20, False, True)
+        txt = "Hallo Welt, das ist ein langer Satz fuer die Grundlinie"
+        hand = [g[2] for g in p._laid_out(txt, 100, 100, 20, 1.0, True)]
+        plain = [g[2] for g in p._laid_out(txt, 100, 100, 20, 1.0, False)]
+        self.assertNotEqual(hand, plain, "Comicschrift wackelt nicht wie die Unterzeile")
+        avg = lambda v: sum(abs(y - 100) for y in v) / len(v)
+        self.assertGreater(avg(hand), avg(plain))
+
+    def test_regression_animation_order_varies_between_runs(self):
+        """Regression 0.8.0: jede Sitzung spielte Szenen in derselben Reihenfolge; jetzt mischt RUN_SEED mit."""
+        import importlib
+        from agentscope import acts
+        seqs = set()
+        for seed in (1, 2, 3, 4):
+            acts.RUN_SEED = seed
+            acts._perm.cache_clear() if hasattr(acts._perm, "cache_clear") else None
+            seqs.add(tuple(acts.variant("k", "idle", i * 14.0, 34) for i in range(10)))
+        self.assertGreater(len(seqs), 1, "Reihenfolge ist unabhängig vom Lauf identisch")
+
+    def test_protesters_answer_ich_mach_nur_meinen_job(self):
+        src = open(scene.__file__.replace("scene.py", "acts.py")).read()
+        self.assertIn("Ich mach nur meinen Job.", src)
+        self.assertNotIn("Ich bin nur ein Strichmännchen!", src)
+
+    def test_new_meme_and_challenge_scenes_registered(self):
+        from agentscope import acts
+        names = {f.__name__ for f in acts.ACTS["idle"] if f}
+        self.assertTrue({"idle_67", "idle_thisisfine", "idle_distracted"} <= names)
+        self.assertTrue({"idle_planking", "idle_mannequin", "idle_icebucket"} <= names)
+
+    def test_default_fps_is_eight(self):
+        import inspect
+        from agentscope import app
+        self.assertIn("default=8", inspect.getsource(app.main))

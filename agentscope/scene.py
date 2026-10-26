@@ -242,28 +242,42 @@ def render_empty(p: Pen, W, H, t, top, bottom):
 
 # ======================================================================== Panel
 def harness_ink(a: Agent):
-    """Dezent andere Umrissfarbe je Harness (pi bleibt Tinte)."""
+    """Farbton für Beschriftungskasten und Titeltext je Harness (pi bleibt Tinte; die Skizzenlinien selbst bleiben schwarz)."""
     return {"pi": INK, "claude": (0.72, 0.36, 0.14), "codex": (0.13, 0.44, 0.34),
             "demo": INK}.get(getattr(a, "harness", "pi") or "pi", INK)
 
 
+def harness_tint(a: Agent):
+    """Sanfte Füllfarbe des Beschriftungskastens: nur dort sitzt die Harness-Farbe, Skizzenlinien bleiben Tinte."""
+    return {"pi": (0.94, 0.94, 0.92), "claude": (0.98, 0.90, 0.80), "codex": (0.86, 0.94, 0.91),
+            "demo": (0.94, 0.94, 0.92)}.get(getattr(a, "harness", "pi") or "pi", (0.94, 0.94, 0.92))
+
+
+def session_label(a: Agent) -> str:
+    """Kurze Sitzungskennung als Rückfall, wenn weder Skill noch Sitzungsname vorliegt."""
+    key = (getattr(a, "key", "") or "").split(":", 1)[-1]
+    key = key.rsplit("/", 1)[-1].replace(".jsonl", "").replace(".json", "")
+    short = key[-8:] if len(key) > 8 else key
+    return f"Sitzung {short}" if short else "Sitzung"
+
+
 def panel_title(a: Agent) -> str:
-    """Beschriftung links oben: Harness · gekürzter Skill- oder Sitzungsname."""
+    """Beschriftung links oben: Harness · Skill/Sitzungsname, immer mit Sitzungsinfo."""
     harness = getattr(a, "harness", "pi") or "pi"
-    short = (getattr(a, "skill", "") or a.title or "?").strip()
+    short = (getattr(a, "skill", "") or (a.title or "").strip())
+    if not short or short == "?":
+        short = session_label(a)
     return f"{harness} · {short}"
 
 
 def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
-    ink = harness_ink(a)
-    p.ink = ink
     title = p.fit(panel_title(a), 22, 420)
     tw = p.text_width(title, 22, bold=True)
     if p.st:
-        p.rect(0, 0, PW, PH, lw=3, color=ink)
-        # Beschriftungskasten wie xkcd-Caption
-        p.rect(-1, -1, tw + 36, 40, lw=2.4, color=ink, fill=PAPER)
-        p.text(title, 16, 28, 22, bold=True, color=ink)
+        p.rect(0, 0, PW, PH, lw=3)
+        # Beschriftungskasten wie xkcd-Caption: einziger farbiger Ort je Harness
+        p.rect(-1, -1, tw + 36, 40, lw=2.4, color=harness_ink(a), fill=harness_tint(a))
+        p.text(title, 16, 28, 22, bold=True, color=harness_ink(a))
         p.line(20, FLOOR, 440, FLOOR, w=1.6, color=GRAY)
     if p.dy:
         phase_txt = PHASE_WORDS.get(a.phase, a.phase)
@@ -430,7 +444,7 @@ def draw_actor(p: Pen, a: Agent, t: float):
     else:
         seated(p, hip, lean=4, hands=((cx + 24, hip[1] - 6), (cx + 30, hip[1] - 4)))
 
-    # Token-Münzen: der Laptop wirft sie in den Maul-Kopf, der kaut und spuckt sie zum Tacho wieder aus
+    # Token-Münzen: der Laptop wirft gelbe Tokens in den Maul-Kopf; grün spuckt er sie wieder aus
     if a.rate > 0 and ph in ("streaming", "tool", "thinking"):
         mx, my = MAUL
         n = int(min(10, 1 + a.rate / 10))
@@ -439,47 +453,54 @@ def draw_actor(p: Pen, a: Agent, t: float):
         coins = []
         for i in range(n):
             k = (t * speed + i / n) % 1
-            if k < 0.5:                                    # Flug in den Mund
+            if k < 0.5:                                    # Flug in den Mund (gelb), kurzer Weg von links
                 f = k / 0.5
-                x0, y0 = lap_x + 10, desk_y - 30
-                x = x0 + (mx - 14 - x0) * f
-                y = y0 + (my - y0) * f - math.sin(f * math.pi) * 90
-                coins.append((x, y, 7))
+                x0, y0 = mx - 44, my + 22
+                x = x0 + (mx - 18 - x0) * f
+                y = y0 + (my - y0) * f - math.sin(f * math.pi) * 6
+                coins.append((x, y, 6, TOK_IN))
             elif k < 0.6:
                 chew = max(chew, 1.0)                      # gerade verschluckt
-            else:                                          # Ausspucken zum Tacho
+            else:                                          # Ausspucken (grün), kleine Wolke nach oben
                 f = (k - 0.6) / 0.4
-                x = mx + 14 + (690 - mx - 14) * f
-                y = my + (200 - my) * f - math.sin(f * math.pi) * 60
-                coins.append((x, y, 7 * (0.7 + 0.3 * f)))
+                x = mx - 6 - 26 * f
+                y = my - 6 - 54 * f
+                coins.append((x, y, 6 * (0.7 + 0.3 * f), TOK_OUT))
                 if f < 0.25:
                     chew = max(chew, 0.5)
-        draw_maul(p, mx, my, t, chew)
-        for x, y, r in coins:
-            p.coin(x, y, r)
+        draw_maul(p, mx, my, t, chew, mirror=True)
+        for x, y, r, col in coins:
+            p.coin(x, y, r, fill=col)
 
-MAUL = (418.0, 204.0)
+# Maul sitzt gespiegelt rechts neben „gesamt gefressen…“; links geht Gelb hinein, rechts kommt Grün heraus.
+MAUL = (806.0, 150.0)
+TOK_IN = (1.0, 0.88, 0.35)
+TOK_OUT = (0.62, 0.90, 0.55)
 
-def draw_maul(p: Pen, x, y, t, chew):
-    """Maul-Kopf (Seitenansicht, schaut nach rechts): Mund klappt auf/zu, Zähne, Schmatzen."""
+
+def draw_maul(p: Pen, x, y, t, chew, mirror=False):
+    """Maul-Kopf: Mund klappt auf/zu, Zähne, Schmatzen. mirror=True öffnet nach links."""
+    d = -1.0 if mirror else 1.0
+    c0 = math.pi if mirror else 0.0
     gap = 0.28 + 0.38 * abs(math.sin(t * 7)) * (0.4 + chew)
-    R = 25
+    R = 20
     pts = [(x, y)]
     for i in range(0, 25):
-        ang = gap + (2 * math.pi - 2 * gap) * i / 24
+        ang = c0 + d * (gap + (2 * math.pi - 2 * gap) * i / 24)
         pts.append((x + R * math.cos(ang), y + R * math.sin(ang)))
     p.poly(pts, closed=True, w=2.2, fill=PAPER, amp=0.4)
     for sgn in (-1, 1):                                   # Zähne an Ober- und Unterkiefer
+        ang = c0 + d * gap if sgn < 0 else c0 - d * gap
         for j in range(3):
-            r0 = 8 + 6 * j
-            ex, ey = x + r0 * math.cos(gap), y + sgn * r0 * math.sin(gap)
-            p.line(ex, ey, ex - 1, ey - sgn * 4, w=1.2, amp=0)
-    p.circle(x - 4, y - 14, 3, w=1.4, fill=INK)
-    p.text("MAUL", x - 2, y + 40, 12, align="center", color=GRAY, hand=True)
+            r0 = 8 + 4 * j
+            ex, ey = x + r0 * math.cos(ang), y + r0 * math.sin(ang)
+            p.line(ex, ey, ex - d * sgn * 3.5, ey - sgn * 2, w=1.2, amp=0)
+    p.circle(x - d * 4, y - 11, 2.6, w=1.4, fill=INK)
+    p.text("MAUL", x - 2, y + 38, 12, align="center", color=GRAY, hand=True)
     if chew >= 1.0:
-        p.text("mampf", x + 6, y - 34, 12, align="center", color=GRAY, hand=True, upper=False)
+        p.text("mampf", x - d * 6, y - 28, 12, align="center", color=GRAY, hand=True, upper=False)
     elif chew > 0:
-        p.text("ptui", x + 40, y - 20, 12, align="center", color=GRAY, hand=True, upper=False)
+        p.text("ptui", x + d * 30, y - 16, 12, align="center", color=GRAY, hand=True, upper=False)
 
 def default_caption(a: Agent, ph: str, tool) -> str:
     if ph == "tool" and tool:
