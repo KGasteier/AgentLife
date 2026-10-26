@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 RUNTIME_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "agentscope")
 SESSIONS_DIR = os.path.expanduser("~/.pi/agent/sessions")
 SESSION_FRESH_S = 15 * 60  # Logs, die länger ruhen, gelten als inaktiv
+RATE_WINDOW_S = 90         # Log-Fallback: Antworten der letzten 90 s mitteln
+RATE_HOLD_S = 25           # … und die Rate so lange nach der letzten Antwort noch zeigen
 TAIL_BYTES = 768 * 1024
 
 
@@ -43,6 +45,7 @@ class Agent:
     tok_in: int = 0
     tok_out: int = 0
     rate: float = 0.0
+    rate_est: bool = False  # Rate aus Log-Durchschnitt geschätzt (keine Live-Messung)
     tools: list = field(default_factory=list)  # [{name,label,started}]
     tool_counts: dict = field(default_factory=dict)
     errors: int = 0
@@ -174,10 +177,38 @@ def _tool_label(name: str, args: dict) -> str:
     return json.dumps(args)[:40]
 
 
+def _iso_s(ts) -> float | None:
+    """ISO-Zeitstempel des Log-Eintrags → Unix-Sekunden."""
+    if not isinstance(ts, str):
+        return None
+    try:
+        from datetime import datetime
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def log_rate(samples: list[tuple[float, float, int]], now: float, last_entry: float | None = None) -> float:
+    """Ausgabe-Token/s aus abgeschlossenen Antworten (ende, dauer, output) im Log.
+
+    Gemittelt über RATE_WINDOW_S. Gezeigt, solange der Agent arbeitet (letzter Eintrag jünger als
+    RATE_HOLD_S) – sonst 0, damit die Nadel bei ruhenden Sessions zurückfällt."""
+    recent = [(e, d, o) for e, d, o in samples if now - e <= RATE_WINDOW_S and d > 0.2 and o > 0]
+    if not recent:
+        return 0.0
+    newest = max(e for e, _, _ in recent)
+    active = max(newest, last_entry or 0)
+    if now - active > RATE_HOLD_S:
+        return 0.0
+    return sum(o for _, _, o in recent) / sum(d for _, d, _ in recent)
+
+
 def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: float) -> Agent | None:
     """Rekonstruiert einen ungefähren Zustand aus dem Ende eines Session-Logs."""
     a = Agent(key=key, title="", source="log", updated=mtime)
     pending: dict[str, dict] = {}
+    samples: list[tuple[float, float, int]] = []
+    last_entry = None
     cwd = ""
     any_entry = False
     for ln in lines:
@@ -189,7 +220,9 @@ def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: floa
             continue
         any_entry = True
         t = o.get("type")
-        ts = o.get("timestamp")
+        ts = _iso_s(o.get("timestamp"))
+        if ts:
+            last_entry = ts
         if t == "session":
             cwd = o.get("cwd", "")
         elif t == "session_info" and o.get("name"):
@@ -215,6 +248,9 @@ def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: floa
                 a.tok_in += u.get("input", 0) or 0
                 a.tok_out += u.get("output", 0) or 0
                 a.tok_total += u.get("totalTokens", 0) or 0
+                start = m.get("timestamp")
+                if ts and isinstance(start, (int, float)) and start > 0:
+                    samples.append((ts, ts - start / 1000, int(u.get("output", 0) or 0)))
                 if u.get("totalTokens"):
                     a.ctx_tokens = u["totalTokens"]
                 if m.get("model"):
@@ -241,11 +277,12 @@ def agent_from_session_lines(lines: list[str], key: str, mtime: float, now: floa
                 d = m.get("details") or {}
                 if m.get("toolName") == "subagent" and isinstance(d.get("results"), list):
                     a.runs = [_run_from_details(m.get("toolCallId", ""), d, True)][-4:]
-        _ = ts
     if not any_entry:
         return None
     a.title = a.title or _short_cwd(cwd or "pi")
     a.tools = list(pending.values())
+    a.rate = log_rate(samples, now, last_entry)
+    a.rate_est = a.rate > 0
     idle_s = now - mtime
     if a.tools:
         a.phase = "tool"

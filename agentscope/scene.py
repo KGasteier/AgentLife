@@ -20,6 +20,7 @@ from collections import deque
 
 import cairo
 
+from . import dance
 from .model import Agent
 from .sketch import LEG, BLUE, GRAY, INK, LIGHT, PAPER, RED, Pen
 
@@ -65,6 +66,18 @@ class History:
         self.data: dict[str, deque] = {}
         self.marks: dict[str, deque] = {}
         self._compacts: dict[str, int] = {}
+        self._needle: dict[str, tuple[float, float]] = {}
+
+    def needle(self, key: str, target: float, t: float, tau: float = 0.6) -> float:
+        """Geglätteter Tachowert (exponentiell, Zeitkonstante tau): die Nadel schwingt statt zu springen."""
+        if key not in self._needle:                # erster Wert: sofort anzeigen (Schnappschuss, Start)
+            self._needle[key] = (target, t)
+            return target
+        v, t0 = self._needle[key]
+        dt = max(0.0, min(1.0, t - t0))
+        v += (target - v) * (1 - math.exp(-dt / tau))
+        self._needle[key] = (v, t)
+        return v
 
     def sample(self, agents: list[Agent], now: float):
         for a in agents:
@@ -178,7 +191,7 @@ def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
 
     draw_actor(p, a, t)
     draw_context_jar(p, a, t, 470, 140, 92, 190)
-    draw_gauge(p, a, t, 690, 140)
+    draw_gauge(p, a, t, 690, 140, hist=hist)
     draw_chart(p, a, t, hist, 590, 250, 230, 130)
     draw_notebook(p, a, t, 845, 52, 145, 345)
     draw_bottom(p, a, t, 0, 404, PW, PH - 404)
@@ -215,15 +228,16 @@ def seated_at(hip, lean=10.0, look=0.0):
     return Pen.anchors(*hip, lean=lean, flip=True, look=look)
 
 
-def standing_at(x, lift=0.0, flip=False, lean=0.0):
-    return Pen.anchors(x, FLOOR - lift - 2 * LEG + 0.5, lean=lean, flip=flip)
+def standing_at(x, lift=0.0, flip=False, lean=0.0, crouch=0.0):
+    return Pen.anchors(x, FLOOR - lift - 2 * LEG + 0.5 + crouch, lean=lean, flip=flip)
 
 
-def standing(p: Pen, x, *, lift=0.0, flip=False, **kw):
-    """Figur steht (Füße am Boden, bei lift>0 in der Luft). Hüfte liegt genau eine Beinlänge über den Füßen."""
+def standing(p: Pen, x, *, lift=0.0, flip=False, crouch=0.0, stance=9.0, **kw):
+    """Figur steht (Füße am Boden, bei lift>0 in der Luft). Hüfte liegt eine Beinlänge über den Füßen,
+    crouch senkt sie (Knie beugen sich, Füße bleiben stehen)."""
     foot_y = FLOOR - lift
-    hy = foot_y - 2 * LEG + 0.5
-    feet = ((x - 9, foot_y), (x + 9, foot_y))
+    hy = foot_y - 2 * LEG + 0.5 + crouch
+    feet = ((x - stance, foot_y), (x + stance, foot_y))
     return p.figure(x, hy, flip=flip, feet=feet, **kw)
 
 
@@ -280,9 +294,8 @@ def draw_actor(p: Pen, a: Agent, t: float):
         think_at(p, h["head"], frag + " " + "." * (1 + int(t * 2) % 3))
         caption(p, "thinking it over", cx + 60)
     elif ph == "streaming":
-        k = 1 + min(3.0, a.rate / 25)
-        tap = (2.5 * math.sin(t * 9 * k), 2.5 * math.sin(t * 9 * k + 2))
-        seated(p, hip, lean=12, hands=((keys[0], keys[1] - 2 - abs(tap[0])), (keys[0] + 12, keys[1] - 2 - abs(tap[1]))))
+        hl, hr, lean, look = typing_hands(t, a.rate, keys)
+        seated(p, hip, lean=lean, look=look, hands=(hl, hr))
         caption(p, "streaming tokens", cx + 60)
     elif ph == "tool":
         draw_tool_pose(p, kind, tool, hip, cx, desk_y, floor, t, keys)
@@ -336,33 +349,136 @@ def caption(p: Pen, text: str, x: float, color=INK):
     p.text(text, x, FLOOR + 20, 14, align="center", color=color, maxw=400)
 
 
+def _hash01(*xs) -> float:
+    """Deterministischer Pseudo-Zufall 0…1 (für Anschlag-Rhythmus ohne Flimmern)."""
+    h = 2166136261
+    for x in xs:
+        h = ((h ^ (int(x) & 0xFFFFFFFF)) * 16777619) & 0xFFFFFFFF
+    return h / 0xFFFFFFFF
+
+
+def typing_hands(t: float, rate: float, keys) -> tuple:
+    """Tippen wie ein Mensch: einzelne Anschläge (schnell runter, langsam hoch), die Hände wechseln sich ab,
+    wandern über die Tastatur, kurze Denkpausen nach „Wörtern“ und gelegentlich ein beherztes Enter.
+
+    Gibt (linke Hand, rechte Hand, lean, look) zurück; keys = linke vordere Tastaturecke."""
+    speed = 4.0 + min(10.0, rate / 8)            # Anschläge/s, schneller bei höherer Tokenrate
+    n = int(t * speed)
+    ph = t * speed - n                            # 0…1 innerhalb des Anschlags
+    word = n // 6                                 # ~6 Anschläge pro Wort
+    pause = _hash01(word, 7) < 0.25 and n % 6 == 5
+    enter = _hash01(word, 11) < 0.12 and n % 6 == 5
+    kx, ky = keys
+    base_l, base_r = (kx + 2, ky - 2), (kx + 14, ky - 2)
+    hand_r = n % 2 == 1 or _hash01(n, 3) < 0.25   # leicht ungleich verteilt
+    off = 6 * _hash01(n, 5) - 3                   # Taste wandert über die Breite
+    # Hub: schnell runter (0…0.3), langsamer hoch, Ruhe dazwischen
+    if ph < 0.3:
+        lift = 1 - ph / 0.3
+    else:
+        lift = min(1.0, (ph - 0.3) / 0.5)
+    lift = 7.0 * lift
+    rest = 3.0
+    l = (base_l[0] + off * 0.5, base_l[1] - rest)
+    r = (base_r[0] + off * 0.5, base_r[1] - rest)
+    if pause:                                     # beide Hände schweben, kurz nachdenken
+        l, r = (l[0] - 2, l[1] - 3), (r[0] - 2, r[1] - 3)
+    elif enter:                                   # rechte Hand holt aus und haut auf Enter
+        up = 1 - ph
+        r = (base_r[0] + 10 + 4 * up, base_r[1] - 2 - 22 * up * up)
+    elif hand_r:
+        r = (r[0] + off, base_r[1] - lift)
+    else:
+        l = (l[0] + off, base_l[1] - lift)
+    lean = 12 + 1.2 * math.sin(t * 1.3)           # leichtes Wippen
+    look = 8 + (3 if pause else 0) + 2 * math.sin(t * 0.7)
+    return l, r, lean, look
+
+
+HAMMER_PERIOD = 1.3     # s pro Schlag
+HAMMER_LEN = 34.0       # Stiel (sketch.Pen.hammer)
+
+
+def _ease(x):
+    x = min(1.0, max(0.0, x))
+    return x * x * (3 - 2 * x)
+
+
+def hammer_swing(t: float) -> dict:
+    """Schlagphasen über eine Periode: ausholen (langsam), oben halten, Schlag (schnell, beschleunigt),
+    Rückprall, Pause. swing = 1 oben/hinten, 0 auf der Kiste; cock = Handgelenk angewinkelt (0…1)."""
+    u = (t / HAMMER_PERIOD) % 1.0
+    impact = 0.0
+    if u < 0.42:                                  # ausholen
+        k = _ease(u / 0.42)
+        swing, cock, aim = k, k, k
+    elif u < 0.52:                                # oben, kurz halten
+        swing, cock, aim = 1.0, 1.0, 1.0
+    elif u < 0.62:                                # Schlag: beschleunigt (k²), Handgelenk schnappt spät durch
+        k = (u - 0.52) / 0.10
+        swing, cock, aim = 1 - k * k, 1 - k ** 3, 1 - k
+    elif u < 0.74:                                # Treffer + Rückprall
+        k = (u - 0.62) / 0.12
+        swing, cock, aim = 0.06 * math.sin(k * math.pi), 0.0, 0.0
+        impact = 1 - k
+    else:                                         # Pause, Hammer liegt auf
+        swing, cock, aim = 0.0, 0.0, 0.0
+    lean = -6 * swing + 14 * (1 - swing)          # beim Ausholen zurück, beim Schlag nach vorn
+    crouch = 8 * (1 - swing) * (1 - swing)        # Knie geben beim Schlag nach
+    return {"u": u, "swing": swing, "cock": cock, "aim": aim, "lean": lean, "crouch": crouch, "impact": impact}
+
+
+def hammer_grip(sh, target, sp: dict):
+    """Hand und Stielwinkel (sketch.hammer-Konvention: 0 = Stiel nach oben) für eine Schwungphase.
+
+    Arm-Winkel th (0 = unten, + = rechts/hinten): von der Kiste (vorn unten) über den Kopf nach hinten
+    vorn hoch über den Kopf nach hinten (th_up = -195° ≈ über dem Kopf). Der Stiel hängt dem Arm um bis zu
+    115° nach (angewinkeltes Handgelenk): oben hängt der Kopf hinter den Rücken, beim Schlag schnappt er vor."""
+    th_hit = math.degrees(math.atan2(target[0] - sh[0], target[1] - sh[1]))   # ca. -45°
+    th_up = -195.0
+    swing = sp["swing"]
+    th = th_hit + (th_up - th_hit) * swing
+    reach_hit = min(44.0, math.dist(sh, target) - HAMMER_LEN)
+    reach = reach_hit + (42.0 - reach_hit) * swing  # oben Arm fast gestreckt über dem Kopf
+    r = math.radians(th)
+    hand = (sh[0] + reach * math.sin(r), sh[1] + reach * math.cos(r))
+    stick = th - 115 * sp["cock"]                  # Kopf hängt hinterher (Richtung Rücken)
+    return hand, 180 - stick
+
+
 def draw_tool_pose(p: Pen, kind, tool, hip, cx, desk_y, floor, t, keys):
     sw = math.sin(t * 6)
     if kind == "bash":
-        # aufgestanden, steht zwischen Kiste ">_" und Stuhl, haut mit dem Hammer auf die Kiste
+        # aufgestanden, steht rechts neben der Kiste ">_" und haut mit dem Hammer drauf
         bx, bw_, bh = 22, 70, 56
         p.rect(bx, floor - bh, bw_, bh, lw=2.4, fill=PAPER)
         p.text(">_", bx + bw_ / 2, floor - 20, 22, align="center", bold=True, hand=False)
         fx = bx + bw_ + 40
-        shx, shy = standing_at(fx, flip=False, lean=4)["sh"]
         target = (bx + bw_ * 0.45, floor - bh - 3)          # Hammerkopf trifft hier
-        th_hit = math.atan2(target[0] - shx, target[1] - shy)
-        th_up = math.radians(-175)                          # ausgeholt: über dem Kopf (Bogen läuft vorn/links)
-        swing = (0.5 + 0.5 * sw) ** 1.6                     # schnell runter, langsam hoch
-        th = th_hit + (th_up - th_hit) * swing
-        # Arm + Stiel (34) reichen genau bis zur Kiste
-        reach = min(44.0, math.hypot(target[0] - shx, target[1] - shy) - 34)
-        hand = (shx + reach * math.sin(th), shy + reach * math.cos(th))
-        h = standing(p, fx, flip=False, lean=4 + 6 * (1 - swing), hands=((fx + 8, shy + 42), hand))
-        p.hammer(h["hr"][0], h["hr"][1], 180 - math.degrees(th))
-        if swing < 0.08:
-            p.text("bonk!", bx + bw_ / 2, floor - bh - 22, 17, align="center", color=GRAY, hand=True)
+        sp = hammer_swing(t)
+        sh = standing_at(fx, flip=False, lean=sp["lean"], crouch=sp["crouch"])["sh"]
+        hand, ang = hammer_grip(sh, target, sp)
+        # freie Hand zielt beim Ausholen auf die Kiste, hängt beim Schlag
+        aim = sp["aim"]
+        free = (sh[0] - 30 * aim - 6 * (1 - aim), sh[1] + 40 - 26 * aim)
+        standing(p, fx, flip=False, lean=sp["lean"], crouch=sp["crouch"], stance=11, hands=(free, hand))
+        p.hammer(hand[0], hand[1], ang)
+        if sp["impact"] > 0:
+            k = sp["impact"]
+            for i in (-1, 0, 1):
+                ax = target[0] + 14 * i
+                p.line(ax, target[1] - 8 - 4 * (1 - abs(i)), ax + 10 * i * (1 + k), target[1] - 16 - 12 * k, w=1.4, color=GRAY, amp=0)
+            p.text("bonk!", bx + bw_ / 2, floor - bh - 30 - 8 * k, 17, align="center", color=GRAY, hand=True)
     elif kind == "read":
-        # zurückgelehnt, Buch mit beiden Händen vor dem Gesicht
-        hd = seated_at(hip, lean=-4)["head"]
-        bkx, bky = hd[0] + 34, hd[1] + 22
-        seated(p, hip, lean=-4, hands=((bkx - 6, bky + 6), (bkx + 4, bky + 8)))
-        p.book(bkx, bky - 8, t)
+        # zurückgelehnt, Buch seitlich vor dem Gesicht: Rücken vorn, offene Seiten zum Leser
+        hd = seated_at(hip, lean=-8, look=12)["head"]
+        bh = 40.0
+        spine = (hd[0] + 46, hd[1] + 2)
+        depth = bh * 0.62
+        bot = (spine[0] - depth * 0.9, spine[1] + bh / 2)
+        # beide Hände halten den unteren Deckel, Ellbogen hängen locker
+        seated(p, hip, lean=-8, look=12, hands=((bot[0] + 3, bot[1] + 1), (bot[0] + 12, bot[1] - 4)))
+        p.book(*spine, t, h=bh, facing=-1)
     elif kind == "write":
         # schreibt auf ein Blatt neben dem Laptop
         paper_x = cx + 34
@@ -445,8 +561,9 @@ def draw_context_jar(p: Pen, a: Agent, t: float, x, y, w, h):
 
 
 # ------------------------------------------------------------------------ Tacho
-def draw_gauge(p: Pen, a: Agent, t: float, cx, cy, r=78, vmax=150.0):
+def draw_gauge(p: Pen, a: Agent, t: float, cx, cy, r=78, vmax=150.0, hist: History | None = None):
     rate = max(0.0, a.rate or 0.0)
+    shown = hist.needle(a.key, rate, t) if hist else rate
     p.arc(cx, cy, r, math.pi, 2 * math.pi, w=2.6)
     p.line(cx - r, cy, cx + r, cy, w=2)
     for i in range(6):
@@ -454,12 +571,12 @@ def draw_gauge(p: Pen, a: Agent, t: float, cx, cy, r=78, vmax=150.0):
         p.line(cx + (r - 10) * math.cos(ang), cy + (r - 10) * math.sin(ang), cx + r * math.cos(ang), cy + r * math.sin(ang), w=2, amp=0)
     # roter Bereich
     p.arc(cx, cy, r - 6, math.pi * 1.8, 2 * math.pi, w=5, color=RED)
-    v = rate + (1.5 * math.sin(t * 13) if a.rate > 0 else 0)
+    v = shown + (1.5 * math.sin(t * 13) if shown > 0.5 else 0)
     ang = math.pi + math.pi * min(1.0, v / vmax)
     p.line(cx, cy, cx + (r - 16) * math.cos(ang), cy + (r - 16) * math.sin(ang), w=3, color=RED, amp=0)
     p.circle(cx, cy, 5, w=2, fill=INK)
     p.text("tokens / sec", cx, cy - r - 12, 15, align="center", bold=True)
-    p.text(f"{rate:.0f}", cx, cy + 26, 24, align="center", bold=True)
+    p.text(f"~{rate:.0f}" if a.rate_est else f"{rate:.0f}", cx, cy + 26, 24, align="center", bold=True)
     p.text(f"total eaten: {fmt_tok(a.tok_total)}", cx, cy + 50, 14, align="center")
     if a.tok_in or a.tok_out:
         p.text(f"in {fmt_tok(a.tok_in)} · out {fmt_tok(a.tok_out)}", cx, cy + 68, 12, align="center", color=GRAY)
@@ -574,10 +691,12 @@ def draw_minions(p: Pen, run: dict, t: float, x, y, w, h):
             p.figure(cx - 40, base - 8, s=s, la=(-60, -40), ra=(60, 40), ll=(100, 90), rl=(80, 90), lean=-90, eyes="x", color=RED)
             p.smoke(cx + 10, base - 20, t, n=2, color=RED, scale=0.4)
         else:
-            sw = math.sin(t * 6 + i)
-            p.figure(*hip, s=s, la=(30 * sw, 10), ra=(-30 * sw, -10), ll=(20 * sw, 0), rl=(-20 * sw, 0), head_dy=abs(sw) * 2)
-            p.rect(cx + 2, base - 22, 22, 22, lw=1.6, fill=PAPER)
-            p.text("…" if int(t * 2 + i) % 2 else "..", cx + 13, base - 26, 12, align="center", color=GRAY)
+            # arbeitet = tanzt (jeder Minion eigener, wechselnder Stil), Noten schweben hoch
+            style = dance.pick(sa.get("agent", ""), i, t)
+            dance.draw(p, style, t + i * 0.37, cx - 10, base, s)
+            for j in range(2):
+                k = (t * 0.5 + j * 0.5 + i * 0.21) % 1
+                p.note(cx + 18 + 8 * math.sin(k * 6 + j), base - 40 - k * 40, 0.7, color=GRAY, double=j == 1)
         name = sa.get("agent", "?")
         p.text(name, cx, base - 92, 12, align="center", bold=True, maxw=slot - 6)
         sub = sa.get("error") if st == "failed" else (sa.get("lastTool") or sa.get("task", ""))

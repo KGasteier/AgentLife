@@ -264,7 +264,8 @@ class Pen:
         elif align == "right":
             x -= width
         cr.set_source_rgb(*color)
-        r = random.Random(_seed(len(s), round(x), round(y), self.boil))
+        # Schrift „kocht“ nicht mit: ruhiger Text liest sich besser und flackert nicht (Seed ohne boil)
+        r = random.Random(_seed(len(s), round(x), round(y)))
         cx = x
         for ch in s:
             adv = self._adv(ch)
@@ -451,12 +452,13 @@ class Pen:
         return {"sh": cls._at((x, y), 180 + lean * sg, 40 * s), "neck": neck, "head": (head[0], head[1] + head_dy * s)}
 
     def figure(self, x, y, s=1.0, la=(20, 10), ra=(-20, -10), ll=(12, 0), rl=(-12, 0), lean=0.0,
-               head_dy=0.0, color=INK, w=2.4, eyes=None, flip=False, hands=None, feet=None, look=0.0):
+               head_dy=0.0, color=INK, w=2.4, eyes=None, flip=False, hands=None, feet=None, look=0.0, splay=False):
         """Strichmännchen. (x, y) = Hüfte. Winkel in Grad, 0 = nach unten, positiv = nach rechts.
         la/ra = (Oberarm, Unterarm), ll/rl = (Oberschenkel, Unterschenkel); flip spiegelt diese Winkel.
 
         hands/feet = (links, rechts) absolute Zielpunkte (oder None je Glied): Gelenke per IK, Ellbogen
         zeigen nach unten/hinten, Knie nach vorn (vorn = rechts bei flip=True, sonst links).
+        splay=True (Frontansicht, z. B. Tanz): Knie und Ellbogen zeigen nach außen, weg vom Körper.
         Gibt Hände, Füße, Knie, Kopf, Schulter, Hüfte zurück."""
         sg = -1 if flip else 1
         fwd = 1 if flip else -1             # Blickrichtung in x
@@ -483,10 +485,15 @@ class Pen:
         self.circle(*head, 13 * s, w=w, color=color, fill=PAPER)
         elbow = (-fwd * 0.5, 1)              # Ellbogen hängen nach unten, leicht nach hinten
         knee = (fwd, -0.3)                   # Knie zeigen nach vorn/oben
-        _, hl = limb(sh, la, ARM * s, ARM * s, hands[0], elbow)
-        _, hr = limb(sh, ra, ARM * s, ARM * s, hands[1], elbow)
-        kl, fl = limb(hip, ll, LEG * s, LEG * s, feet[0], knee)
-        kr, fr = limb(hip, rl, LEG * s, LEG * s, feet[1], knee)
+        def out(root, target, side, down):
+            if not splay or target is None:
+                return None
+            dx = target[0] - root[0]
+            return (math.copysign(1.0, dx) if abs(dx) > 2 * s else side, down)
+        _, hl = limb(sh, la, ARM * s, ARM * s, hands[0], out(sh, hands[0], 1, 0.6) or elbow)
+        _, hr = limb(sh, ra, ARM * s, ARM * s, hands[1], out(sh, hands[1], -1, 0.6) or elbow)
+        kl, fl = limb(hip, ll, LEG * s, LEG * s, feet[0], out(hip, feet[0], 1, -0.2) or knee)
+        kr, fr = limb(hip, rl, LEG * s, LEG * s, feet[1], out(hip, feet[1], -1, -0.2) or knee)
         if eyes == "x":
             for dx in (-5, 4):
                 ex, ey = head[0] + dx * s, head[1] - 2 * s
@@ -544,14 +551,31 @@ class Pen:
         self.poly([(bx + px, by + py), (tx + px * 0.6, ty + py * 0.6), (tx + 6 * math.sin(a), ty + 6 * math.cos(a)),
                    (tx - px * 0.6, ty - py * 0.6), (bx - px, by - py)], closed=True, w=1.8, fill=PAPER)
 
-    def book(self, hx, hy, t=0.0):
-        flap = 3 * math.sin(t * 3)
-        self.poly([(hx - 26, hy - 18 + flap), (hx, hy - 12), (hx + 26, hy - 18 - flap), (hx + 26, hy + 4 - flap), (hx, hy + 10), (hx - 26, hy + 4 + flap)],
-                  closed=True, w=2, fill=PAPER)
-        self.line(hx, hy - 12, hx, hy + 10, w=1.6)
-        for i in range(3):
-            self.line(hx - 21, hy - 10 + i * 6, hx - 5, hy - 6 + i * 6, w=0.9, color=GRAY, amp=0.2)
-            self.line(hx + 5, hy - 6 + i * 6, hx + 21, hy - 10 + i * 6, w=0.9, color=GRAY, amp=0.2)
+    def book(self, x, y, t=0.0, h=34.0, facing=-1):
+        """Aufgeschlagenes Buch in Seitenansicht, der Leser schaut von der Seite drauf.
+
+        (x, y) = Buchrücken (vom Leser weg), facing = Richtung zum Leser (-1 = links). Die Deckel bilden
+        ein „>“, dazwischen fächern die Seiten; ab und zu blättert eine Seite um."""
+        f = facing
+        half = h / 2
+        depth = h * 0.62
+        top = (x + f * depth, y - half)                  # obere Deckelkante (zum Leser)
+        bot = (x + f * depth * 0.9, y + half)            # untere Deckelkante
+        self.poly([top, (x, y), bot], w=2.4, fill=None)
+        # Seitenblock: leicht gewölbte Linien vom Rücken zum Leser
+        for i in range(1, 4):
+            k = i / 4
+            ey = y - half + h * k
+            ex = x + f * depth * (0.86 - 0.12 * abs(k - 0.5))
+            self.poly([(x + f * 2, y), (x + f * depth * 0.5, (y + ey) / 2 - 2), (ex, ey)], w=0.9, color=GRAY, amp=0.2)
+        # Umblättern: alle 3 s schwingt eine Seite von oben nach unten
+        u = (t / 3.0) % 1.0
+        if u < 0.25:
+            k = u / 0.25
+            ang = math.pi * k                             # 0 = oben, pi = unten
+            ex = x + f * depth * 0.9 * math.cos(ang - math.pi / 2) ** 2 + f * 4
+            ey = y - half * math.cos(ang)
+            self.poly([(x, y), (x + f * depth * 0.55, (y + ey) / 2 - 3 * math.sin(ang)), (ex, ey)], w=1.2, color=INK, amp=0.2)
 
     def megaphone(self, hx, hy, t=0.0):
         self.poly([(hx, hy - 5), (hx + 30, hy - 16), (hx + 30, hy + 16), (hx, hy + 5)], closed=True, w=2, fill=PAPER)
@@ -562,6 +586,23 @@ class Pen:
     def magnifier(self, hx, hy):
         self.line(hx, hy, hx + 12, hy - 12, w=3)
         self.circle(hx + 20, hy - 20, 10, w=2.2, fill=PAPER)
+
+    def note(self, x, y, s=1.0, color=INK, double=False):
+        """Musiknote (gezeichnet – die Schriften haben kein ♪). (x, y) = Notenkopf."""
+        cr = self.cr
+        cr.save()
+        cr.translate(x, y)
+        cr.rotate(-0.35)
+        cr.scale(1.0, 0.72)
+        cr.arc(0, 0, 4.2 * s, 0, 2 * math.pi)
+        cr.restore()
+        cr.set_source_rgb(*color)
+        cr.fill()
+        top = y - 20 * s
+        self.line(x + 3.6 * s, y - 1 * s, x + 3.6 * s, top, w=1.6 * s, color=color, amp=0)
+        self.line(x + 3.6 * s, top, x + 10 * s, top + 6 * s, w=1.6 * s, color=color, amp=0)
+        if double:
+            self.line(x + 3.6 * s, top + 5 * s, x + 10 * s, top + 11 * s, w=1.6 * s, color=color, amp=0)
 
     def coin(self, x, y, r=7, color=INK):
         self.circle(x, y, r, w=1.6, color=color, fill=(1.0, 0.93, 0.55))

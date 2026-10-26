@@ -35,6 +35,11 @@ pi-Prozess ──(Erweiterung extension/)──► $XDG_RUNTIME_DIR/agentscope/<
   Zielpunkte gesetzt (`figure(hands=…, feet=…)`). Sitzen: Gesäß auf der Sitzfläche (`SEAT_H` = Unterschenkel),
   Oberschenkel waagerecht, Füße am Boden, Knie vorn; Tisch `DESK_H` = 62. Stehen: Füße auf `FLOOR`.
 
+- **Bewegung**: Hammer über Phasenfunktion `hammer_swing(t)` (Ausholen langsam, Schlag k², Rückprall);
+  Tippen über `typing_hands` (deterministischer Rhythmus per Hash, kein Zufallsflimmern).
+  Tänze in `agentscope/dance.py`: je Stil Hüfte + Hand-/Fußziele, Frontansicht mit `splay`.
+- **Tokenrate im Log-Fallback**: Summe Output-Tokens / Summe Antwortdauern der letzten 90 s, 0 nach 25 s Stille.
+
 ## Metaphern
 siehe README „Was man sieht“.
 

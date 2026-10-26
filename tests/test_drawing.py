@@ -106,5 +106,84 @@ class PoseTest(unittest.TestCase):
                 scene.draw_actor(pen(), a, float(t))
 
 
+
+
+class NeedleTest(unittest.TestCase):
+    def test_needle_eases_towards_target(self):
+        from agentscope.scene import History
+        h = History()
+        v0 = h.needle("a", 0, 0.0)
+        v1 = h.needle("a", 100, 0.3)
+        for i in range(1, 31):
+            v2 = h.needle("a", 100, 0.3 + i * 0.1)
+        self.assertEqual(v0, 0.0)
+        self.assertTrue(0 < v1 < 100)
+        self.assertGreater(v2, 95)
+
+    def test_first_value_shown_immediately(self):
+        from agentscope.scene import History
+        self.assertEqual(History().needle("a", 42, 5.0), 42)
+
+
+class MotionTest(unittest.TestCase):
+    """Regression: Hammer schwang starr wie ein Pendel, Tippen war ein Zittern, Minions hampelten alle gleich."""
+
+    def test_hammer_hits_box_and_cocks_overhead(self):
+        sh = (130.0, 300.0)
+        target = (53.0, 317.0)
+        hit = scene.hammer_swing(0.65 * scene.HAMMER_PERIOD)
+        hand, ang = scene.hammer_grip(sh, target, hit)
+        a = math.radians(ang)
+        head = (hand[0] + scene.HAMMER_LEN * math.sin(a), hand[1] - scene.HAMMER_LEN * math.cos(a))
+        self.assertLess(math.dist(head, target), 8)                         # Kopf trifft die Kiste
+        top = scene.hammer_swing(0.47 * scene.HAMMER_PERIOD)
+        hand, _ = scene.hammer_grip(sh, target, top)
+        self.assertLess(hand[1], sh[1] - 25)                                 # ausgeholt: Hand über dem Kopf
+        self.assertEqual(top["cock"], 1.0)
+
+    def test_hammer_strike_faster_than_windup(self):
+        P = scene.HAMMER_PERIOD
+        def speed(u0, u1):
+            return abs(scene.hammer_swing(u1 * P)["swing"] - scene.hammer_swing(u0 * P)["swing"]) / (u1 - u0)
+        self.assertGreater(speed(0.56, 0.60), 3 * speed(0.15, 0.25))
+
+    def test_typing_alternates_and_stays_on_keys(self):
+        keys = (238.0, 311.0)
+        moved = {"l": 0, "r": 0}
+        prev = None
+        for i in range(200):
+            l, r, _, _ = scene.typing_hands(i * 0.02, 40, keys)
+            for hnd in (l, r):
+                self.assertLess(math.dist(hnd, keys), 40)
+            if prev:
+                moved["l"] += math.dist(l, prev[0]) > 0.5
+                moved["r"] += math.dist(r, prev[1]) > 0.5
+            prev = (l, r)
+        self.assertGreater(moved["l"], 20)
+        self.assertGreater(moved["r"], 20)
+
+    def test_every_dance_keeps_a_foot_down_and_limbs_reachable(self):
+        from agentscope import dance
+        from agentscope.sketch import ARM
+        s, base = 0.6, 300.0
+        for style in dance.DANCES:
+            lowest_ok = 0
+            for i in range(60):
+                d = dance.pose(style, i * 0.05, 100, base, s)
+                f = pen().figure(*d["hip"], s=s, lean=d["lean"], flip=d["flip"], hands=d["hands"], feet=d["feet"], splay=d["splay"])
+                low = max(f["fl"][1], f["fr"][1])
+                self.assertLessEqual(low, base + 1.0, style)                 # nie im Boden
+                lowest_ok += low > base - 0.3 * LEG * s
+                for hk, tgt in (("hl", d["hands"][0]), ("hr", d["hands"][1])):
+                    self.assertLess(math.dist(f[hk], tgt), 2.0, style)       # Hände erreichen ihr Ziel
+            self.assertGreater(lowest_ok, 40, style)                         # meistens Bodenkontakt
+
+    def test_neighbours_dance_differently(self):
+        from agentscope import dance
+        styles = [dance.pick("worker", i, 0) for i in range(4)]
+        self.assertEqual(len(set(styles)), 4)
+        self.assertNotEqual(dance.pick("worker", 0, 0), dance.pick("worker", 0, dance.DANCE_SWITCH_S))
+
+
 if __name__ == "__main__":
     unittest.main()

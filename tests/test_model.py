@@ -66,6 +66,23 @@ class SessionTest(unittest.TestCase):
         self.assertEqual([t["name"] for t in a.tools], ["read"])  # t2 noch offen
         self.assertEqual(a.phase, "tool")
 
+    def test_regression_log_rate_moves_needle(self):
+        """Realbetrieb ohne Live-Datei: Rate kam nie über 0 (Nadel stand still)."""
+        from datetime import datetime, timezone
+        iso = lambda s: datetime.fromtimestamp(s, timezone.utc).isoformat().replace("+00:00", "Z")
+        lines = jl(
+            {"type": "session", "cwd": "/x", "timestamp": iso(1000)},
+            {"type": "message", "timestamp": iso(1010), "message": {"role": "assistant", "timestamp": 1000_000,
+                                                                     "usage": {"output": 800}, "content": []}},
+            {"type": "message", "timestamp": iso(1030), "message": {"role": "assistant", "timestamp": 1020_000,
+                                                                     "usage": {"output": 200}, "content": []}},
+        )
+        a = model.agent_from_session_lines(lines, "k", mtime=1030, now=1035)
+        self.assertAlmostEqual(a.rate, 1000 / 20)
+        self.assertTrue(a.rate_est)
+        idle = model.agent_from_session_lines(lines, "k", mtime=1030, now=1030 + model.RATE_HOLD_S + 1)
+        self.assertEqual(idle.rate, 0)
+
     def test_regression_empty_tasks_label(self):
         self.assertEqual(model._tool_label("subagent", {"agent": "worker", "tasks": []}), "worker")
 
