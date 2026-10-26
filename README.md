@@ -81,8 +81,10 @@ o.window("org.omarchy.agentscope", { fullscreen = true })
 
 Abhängigkeiten: python3 mit GObject (GTK 4) und pycairo – auf Omarchy vorhanden.
 Schrift: Überschriften und Blasen in **Steel City Comic** (mitgeliefert unter `agentscope/fonts/`, frei
-nutzbar mit Namensnennung an Steel City, wird nur für den Prozess geladen). Fließtext nimmt `xkcd Script`/
-`Humor Sans`, falls installiert, sonst `URW Gothic`.
+nutzbar mit Namensnennung an Steel City, wird nur für den Prozess geladen). Diese Schrift hat keine
+Umlaute und keine Haken-/Pfeilzeichen; fehlende Zeichen holt der Zeichner automatisch aus
+**Kalam** (Handschrift-Ersatz, ebenfalls mitgeliefert) bzw. einer Symbolschrift. Fließtext nimmt
+`xkcd Script`/`Humor Sans`, falls installiert, sonst `URW Gothic`.
 
 ## Tests
 

@@ -27,6 +27,9 @@ PINK = (0.85, 0.25, 0.5)   # Gehirn und Verbindungsfaden zum Modell
 
 FONT_CANDIDATES = ["xkcd Script", "xkcd", "Humor Sans", "Comic Neue", "URW Gothic"]
 HAND_FONT = "Steel City Comic"          # Comic-Handschrift für Überschriften und Blasen (agentscope/fonts)
+# Steel City Comic kennt keine Umlaute und kaum Sonderzeichen – diese Familien springen zeichenweise ein.
+# Kalam übernimmt Umlaute und Satzzeichen in Handschrift-Optik; die Symbolschriften retten ✓/↻.
+HAND_FALLBACK = ["Kalam", "Adwaita Sans", "DejaVu Sans", "Noto Sans Symbols 2", "Symbola"]
 FONT_DIR = Path(__file__).resolve().parent / "fonts"
 
 
@@ -79,6 +82,33 @@ _BASELINE_EM = {"Steel City Comic": 0.70, "Kalam": 0.78}
 
 _ADV: dict = {}
 _MASKS: dict = {}
+_GLYPH_OK: dict = {}   # (Familie, Zeichen) → hat die Familie eine sichtbare Glyphe?
+
+
+def _glyph_probe(fam: str, ch: str) -> bool:
+    """Prüft auf einem Wegwerf-Zeichner, ob `fam` für `ch` überhaupt eine sichtbare Glyphe hat.
+
+    Nötig, weil Steel City Comic im cmap zwar z. B. Ä/Ö/Ü/ä/ö/ü/ß führt, die Glyphen aber leer
+    sind (Vorschub da, Tinte null). Ohne Probe bliebe in der deutschen Oberfläche eine Lücke."""
+    if ch == " ":
+        return True
+    key = (fam, ch)
+    v = _GLYPH_OK.get(key)
+    if v is None:
+        surf = cairo.ImageSurface(cairo.FORMAT_A8, 4, 4)
+        cr = cairo.Context(surf)
+        cr.select_font_face(fam, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+        cr.set_font_size(32)
+        e = cr.text_extents(ch)
+        # Zwei Proben, weil jede für sich täuscht: Steel City Comic hat für Ä/Ö/Ü/ä/ö/ü/ß einen
+        # gültigen Glyphenindex, aber keine Konturen (Breite/Höhe 0), während ✓/↻ dort auf das
+        # Notdef-Kästchen (Index 0) fallen, das sehr wohl Tinte hat.
+        glyphs, _cl, _fl = cr.get_scaled_font().text_to_glyphs(0, 0, ch)
+        v = bool(glyphs) and glyphs[0][0] != 0 and e.x_advance > 0 and (e.width > 0 or e.height > 0)
+        if len(_GLYPH_OK) > 5000:
+            _GLYPH_OK.clear()
+        _GLYPH_OK[key] = v
+    return v
 HINT_SCALE = 1.0  # echter Anzeigemaßstab; GTK4 liefert eine Aufzeichnungsfläche mit Maßstab 1, die erst später gerastert wird
 _NOMASK = bool(__import__("os").environ.get("AGENTSCOPE_NOMASK"))
 LEG = 30.0   # Ober-/Unterschenkel; Rumpf (Hüfte–Hals) = 48
@@ -239,16 +269,38 @@ class Pen:
 
     # ------------------------------------------------------------------ Schrift
     def _font(self, size, bold=False, hand=False):
+        self._size, self._bold, self._hand = size, bold, hand
         fam = self.hand if hand else self.font
         self.cr.select_font_face(fam, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
         self.cr.set_font_size(size)
         self._fkey = (fam, round(size, 2), bold)
 
+    def family_for(self, ch, hand=None):
+        """Familie, die `ch` wirklich zeichnen kann: Comicschrift, dann Ersatz-Handschriften, dann Grundschrift."""
+        hand = self._hand if hand is None else hand
+        fams = [self.hand, *HAND_FALLBACK, self.font] if hand else [self.font, *HAND_FALLBACK]
+        for fam in fams:
+            if _glyph_probe(fam, ch):
+                return fam
+        return fams[-1]
+
+    def _select(self, cr, ch, size=None, bold=None, hand=None):
+        """Wählt für ein einzelnes Zeichen die passende Familie (Zeichen-Fallback) und setzt Größe/Gewicht."""
+        size = self._size if size is None else size
+        bold = self._bold if bold is None else bold
+        hand = self._hand if hand is None else hand
+        fam = self.family_for(ch, hand)
+        cr.select_font_face(fam, cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD if bold else cairo.FONT_WEIGHT_NORMAL)
+        cr.set_font_size(size)
+        return fam
+
     def _adv(self, ch):
         """Vorschub eines Zeichens; Cache über alle Frames (Schrift ändert sich nicht)."""
-        k = (self._fkey, ch)
+        fam = self.family_for(ch)
+        k = (fam, round(self._size, 2), self._bold, ch)
         v = _ADV.get(k)
         if v is None:
+            self._select(self.cr, ch)
             v = self.cr.text_extents(ch).x_advance
             if len(_ADV) > 20000:
                 _ADV.clear()
@@ -293,6 +345,7 @@ class Pen:
         for ch, gx, gy, rot, adv in self._laid_out(s, x, y, size, jitter, hand):
             if ch != " ":
                 cr.save()
+                self._select(cr, ch, size, bold, hand)
                 cr.translate(gx, gy)
                 cr.rotate(rot)
                 cr.move_to(-adv / 2, 0)
@@ -371,6 +424,7 @@ class Pen:
                 if hand:
                     dy += r.uniform(-1.5, 1.5) * size / 18      # Grundlinie der Handschrift wackelt leicht
                 cr.save()
+                self._select(cr, ch, size, self._bold, hand)
                 cr.translate(cx + adv / 2, y0 + dy)
                 cr.rotate(r.uniform(-0.08, 0.08) * jitter)
                 cr.move_to(-adv / 2, 0)

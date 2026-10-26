@@ -44,6 +44,33 @@ class FontTest(unittest.TestCase):
         ys = [gy for _ch, _gx, gy, _rot, _adv in p._laid_out("Handschrift", 10, 100, 26, 1.0, True)]
         self.assertGreater(max(ys) - min(ys), 1.2, "keine Grundlinien-Unruhe in der Comicschrift")
 
+    def test_regression_comic_font_falls_back_per_character(self):
+        """Regression 0.8.2b: Steel City Comic hat für Ä/Ö/Ü/ä/ö/ü/ß und ✓/↻ leere Glyphen –
+        ohne Zeichen-Fallback blieben in der deutschen Oberfläche Lücken bzw. Kästchen."""
+        self.assertTrue(sketch.register_fonts())
+        p = pen()
+        p._font(24, False, True)
+        for ch in "ÄÖÜäöüß":
+            self.assertNotEqual(p.family_for(ch, True), sketch.HAND_FONT,
+                                f"{ch!r} würde in Steel City Comic leer bleiben")
+        for ch in "✓↻":
+            self.assertNotEqual(p.family_for(ch, True), sketch.HAND_FONT,
+                                f"{ch!r} fällt in Steel City Comic auf das Notdef-Kästchen")
+        self.assertEqual(p.family_for("A", True), sketch.HAND_FONT)   # Gegenprobe
+
+    def test_regression_umlauts_leave_ink_on_the_page(self):
+        """Regression 0.8.2b: Umlaute müssen wirklich Tinte setzen (nicht nur Vorschub haben)."""
+        surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 300, 100)
+        cr = cairo.Context(surf)
+        cr.set_source_rgb(1, 1, 1)
+        cr.paint()
+        p = Pen(cr)
+        p.text("Ärger Öl Übung", 20, 60, 30, hand=True, upper=False)
+        surf.flush()
+        buf, st = surf.get_data(), surf.get_stride()
+        dark = sum(1 for y in range(100) for x in range(300) if buf[y * st + 4 * x] < 200)
+        self.assertGreater(dark, 400, "Umlaute setzen keine Tinte")
+
     def test_advance_cache_separates_fonts(self):
         p = pen()
         a = p.text_width("W", 30, hand=True)
