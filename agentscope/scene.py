@@ -247,8 +247,8 @@ def has_model(a: Agent) -> bool:
 
 
 def brain_pos(a: Agent, title_width: float):
-    """Position des pinken Gehirns links vom Modellnamen im Titelbereich."""
-    return (title_width + 42.0, 21.0)
+    """Position des pinken Gehirns links vom Modellnamen im Titelbereich (Mitte des Gehirns)."""
+    return (title_width + 46.0, 18.0)
 
 
 def harness_ink(a: Agent):
@@ -290,8 +290,11 @@ def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
         p.text(title, 16, 28, 22, bold=True, color=harness_ink(a))
         p.line(20, FLOOR, 440, FLOOR, w=1.6, color=GRAY)
         # pinkes Gehirn links vom Modellnamen; der Faden zum Kopf folgt in der dynamischen Ebene
-        p.brain(*brain_pos(a, tw), 0.9)
-    p.brain_xy = brain_pos(a, tw)
+        bx, by = brain_pos(a, tw)
+        p.brain(bx, by, 1.25)
+        p.brain_xy = (bx, by)
+    else:
+        p.brain_xy = brain_pos(a, tw)
     if p.dy:
         phase_txt = PHASE_WORDS.get(a.phase, a.phase)
         if has_model(a):
@@ -390,16 +393,55 @@ def draw_slumped(p: Pen, a: Agent, t: float, cx: float, seat_y: float, floor: fl
     caption(p, "kein Modell angewählt – Verbindung getrennt", cx + 60, color=GRAY)
 
 
+def draw_inactive_rest(p: Pen, a: Agent, t: float):
+    """Kein Modell: der untere Streifen zeigt keine Aktivität – keine Minions, Balken oder Hoppla-Striche."""
+    if not p.dy:
+        return
+    p.text("Tools in dieser Sitzung", 30, 424, 15, bold=True, color=GRAY)
+    p.text("(keine – kein Modell angewählt)", 30, 460, 13, color=GRAY)
+    p.text("Hoppla-Zähler", 690, 422, 15, bold=True, color=GRAY)
+    p.text("0 – kein Modell", 696, 458, 13, color=GRAY)
+
+
+def _thread_points(bx, by, tx, ty, t, n=22):
+    """Punkte des luftigen pinken Fadens von (bx,by) nach (tx,ty); Anfang und Ende exakt."""
+    pts = []
+    for i in range(n + 1):
+        k = i / n
+        x = bx + (tx - bx) * k
+        y = by + (ty - by) * k
+        env = math.sin(math.pi * k)                        # an beiden Enden exakt 0 (fester Anschluss)
+        sag = 16 * env                                     # leichter Durchhang
+        wave = 6.0 * math.sin(k * 9.0 - t * 2.6) * env
+        pts.append((x + wave * 0.8, y + sag + wave))
+    return pts
+
+
+def _thread_behind(p: Pen, pts):
+    """Zeichnet den Faden, lässt ihn aber hinter Sprech-/Gedankenblasen verschwinden (keine Lücke am Kopf)."""
+    run = [pts[0]]
+    for q in pts[1:]:
+        if p.bubbles_cover(q[0], q[1]):
+            if len(run) > 1:
+                p.curve(run, w=0.7, color=PINK)
+            run = []
+        else:
+            run.append(q)
+    if len(run) > 1:
+        p.curve(run, w=0.7, color=PINK)
+
+
 def _model_thread(p: Pen, cx: float, t: float, broken: bool = False):
     """Ganz feiner pinker Faden vom Gehirn (Titel) zum Kopf der Hauptfigur; wackelt luftig mit.
 
+    Liegt hinter Sprech-/Gedankenblasen und endet fest am Kopf (kein Spalt).
     broken=True (kein Modell): der Faden ist oben abgerissen und baumelt schlaff herab."""
     if not p.dy or not p.heads:
         return
-    bx, by = getattr(p, "brain_xy", (60.0, 21.0))
+    bx, by = getattr(p, "brain_xy", (60.0, 18.0))
     hip, head = min(p.heads, key=lambda hh: abs(hh[0][0] - cx))   # Kopf der Hauptfigur (nächste Hüfte an cx)
     hx, hy = head
-    tx, ty = hx - 4, hy - 14                              # Kopfoberkante
+    tx, ty = hx - 2, hy - 15                              # Kopfoberkante, fest am Kreis
     if broken:
         # oben abgerissen: kurzes, schlaff herabhängendes Ende direkt unter dem Gehirn
         sway = 5.0 * math.sin(t * 1.3)
@@ -409,20 +451,13 @@ def _model_thread(p: Pen, cx: float, t: float, broken: bool = False):
         p.circle(end[0], end[1], 1.7, w=0.8, color=PINK, fill=PINK)
         p.text("kein Signal", end[0] + 6, end[1] + 4, 9, color=PINK, hand=True, upper=False, jitter=0.4)
         return
-    pts = []
-    n = 6
-    for i in range(n + 1):
-        k = i / n
-        x = bx + (tx - bx) * k
-        y = by + 9 + (ty - (by + 9)) * k
-        sag = 16 * math.sin(math.pi * k)                  # leichter Durchhang
-        wave = 6.0 * math.sin(k * 9.0 - t * 2.6) * (1 - abs(k - 0.5) * 1.1)
-        pts.append((x + wave * 0.8, y + sag + wave))
-    p.curve(pts, w=0.7, color=PINK)
+    _thread_behind(p, _thread_points(bx, by + 9, tx, ty, t))
+    p.circle(tx, ty, 1.5, w=0.9, color=PINK, fill=PINK)   # fester Anschluss am Kopf
 
 
 def draw_actor(p: Pen, a: Agent, t: float):
     p.heads = []                     # nur die Figuren dieses Panels für den Modell-Faden
+    p.bubbles = []                   # nur die Blasen dieses Panels (Faden liegt dahinter)
     cx, floor = ACTOR_X, FLOOR
     desk_y = floor - DESK_H
     seat_y = floor - SEAT_H
@@ -759,6 +794,10 @@ def draw_context_jar(p: Pen, a: Agent, t: float, x, y, w, h):
         p.text("Kontext", x + w / 2, y + h + 26, 16, align="center", bold=True)
     if not p.dy:
         return
+    if not has_model(a):
+        p.poly([(x + 8, y + 30), (x + 6, y + h), (x + w - 6, y + h), (x + w - 8, y + 30)], closed=True, w=2.6, color=GRAY)
+        p.text("leer", x + w / 2, y + h / 2 + 5, 15, align="center", color=GRAY)
+        return
     pct, guessed = context_fill(a)
     squeeze = 0.0
     recent = a.compact_at and (time.time() - a.compact_at) < 12 and a.compact_count > 0
@@ -814,6 +853,12 @@ def draw_gauge(p: Pen, a: Agent, t: float, cx, cy, r=78, vmax=150.0, hist: Histo
         p.text("Tokens / Sek.", cx, cy - r - 12, 15, align="center", bold=True)
     if not p.dy:
         return
+    if not has_model(a):
+        p.line(cx, cy, cx - (r - 16), cy, w=3, color=GRAY, amp=0)     # Nadel liegt links am Anschlag
+        p.circle(cx, cy, 5, w=2, fill=PAPER, color=GRAY)
+        p.text("0", cx, cy + 26, 24, align="center", bold=True, color=GRAY)
+        p.text("kein Modell angewählt", cx, cy + 50, 14, align="center", color=GRAY)
+        return
     v = shown + (1.5 * math.sin(t * 13) if shown > 0.5 else 0)
     ang = math.pi + math.pi * min(1.0, v / vmax)
     p.line(cx, cy, cx + (r - 16) * math.cos(ang), cy + (r - 16) * math.sin(ang), w=3, color=RED, amp=0)
@@ -834,6 +879,9 @@ def draw_chart(p: Pen, a: Agent, t: float, hist: History | None, x, y, w, h):
         p.text("Kontext im Zeitverlauf", x + w / 2, y - 8, 13, align="center", bold=True)
         p.text("Zeit →", x + w - 4, y + h + 16, 11, align="right", color=GRAY)
     if not p.dy:
+        return
+    if not has_model(a):
+        p.text("(keine Aktivität – kein Modell)", x + w / 2, y + h / 2 + 5, 12, align="center", color=GRAY)
         return
     pts = list(hist.data.get(a.key, [])) if hist else []
     win = a.ctx_window or max([v for _, v in pts] + [1])
@@ -874,6 +922,9 @@ def draw_notebook(p: Pen, a: Agent, t: float, x, y, w, h):
         p.text("Laborbuch", x + w / 2, y + 26, 14, align="center", bold=True)
     if not p.dy:
         return
+    if not has_model(a):
+        p.text("(kein Modell angewählt)", x + w / 2, y + 72, 12, align="center", color=GRAY)
+        return
     evs = a.events[-11:]
     yy = y + 50
     for e in reversed(evs):
@@ -890,6 +941,9 @@ def draw_notebook(p: Pen, a: Agent, t: float, x, y, w, h):
 
 # ------------------------------------------------------------------------ Unterer Streifen
 def draw_bottom(p: Pen, a: Agent, t: float, x, y, w, h):
+    if not has_model(a):
+        draw_inactive_rest(p, a, t)
+        return
     run = next((r for r in reversed(a.runs) if not r.get("finished")), None) or (a.runs[-1] if a.runs else None)
     if run and run.get("agents"):
         draw_minions(p, run, t, x + 20, y, 650, h)
@@ -904,6 +958,8 @@ def draw_bottom(p: Pen, a: Agent, t: float, x, y, w, h):
 
 
 def draw_minions(p: Pen, run: dict, t: float, x, y, w, h):
+    if not run.get("agents"):
+        return
     agents = run.get("agents") or []
     total = max(run.get("total", len(agents)), len(agents))
     done, failed = run.get("done", 0), run.get("failed", 0)
@@ -953,6 +1009,10 @@ def draw_minions(p: Pen, run: dict, t: float, x, y, w, h):
 
 
 def draw_tool_bars(p: Pen, a: Agent, x, y, w, h):
+    if not has_model(a):
+        p.text("Tools in dieser Sitzung", x, y + 4, 15, bold=True, color=GRAY)
+        p.text("(keine – kein Modell angewählt)", x, y + 40, 13, color=GRAY)
+        return
     p.text("Tools in dieser Sitzung", x, y + 4, 15, bold=True)
     items = sorted(a.tool_counts.items(), key=lambda kv: -kv[1])[:5]
     if not items:
@@ -970,6 +1030,10 @@ def draw_tool_bars(p: Pen, a: Agent, x, y, w, h):
 
 
 def draw_oops(p: Pen, a: Agent, t: float, x, y, w, h):
+    if not has_model(a):
+        p.text("Hoppla-Zähler", x, y + 4, 15, bold=True, color=GRAY)
+        p.text("0 – kein Modell", x + 6, y + 40, 13, color=GRAY)
+        return
     p.text("Hoppla-Zähler", x, y + 4, 15, bold=True, color=RED if a.errors else INK)
     if a.errors:
         p.tally(x + 6, y + 40, a.errors, h=20, color=RED, maxn=20)

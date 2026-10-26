@@ -97,6 +97,7 @@ class Pen:
         self._cache: dict = {}
         self.layer = None   # None = alles, "static" = nur Unveränderliches, "dynamic" = nur Bewegtes
         self.heads = []         # (Hüfte, Kopf) aller gezeichneten Figuren (für den Modell-Faden)
+        self.bubbles = []       # zuletzt gezeichnete Blasen (Geometrie) – für den Modell-Faden dahinter
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.set_line_join(cairo.LINE_JOIN_ROUND)
 
@@ -469,7 +470,9 @@ class Pen:
             k = (i + 0.7) / 3.4
             self.circle(sx + (tx - sx) * k, sy + (ty - sy) * k, r, fill=PAPER, w=1.8, color=color)
         self.draw_block(block, cx, cy, color=color)
-        return {"block": block, "cx": cx, "cy": cy, "a": a, "b": b, "rb": rb}
+        geo = {"block": block, "cx": cx, "cy": cy, "a": a, "b": b, "rb": rb}
+        self.bubbles.append(("think", geo))
+        return geo
 
     def say(self, text, cx, cy, maxw, maxh, tail, size=18, min_size=12, max_lines=2, color=INK, bold=False, upper=False):
         """Sprechblase, an den Text angepasst (höchstens maxw×maxh), Spitze zeigt auf tail."""
@@ -491,7 +494,21 @@ class Pen:
         self.cr.set_line_width(3)
         self.cr.stroke()
         self.draw_block(block, cx, cy, color=color, bold=bold, upper=upper)
+        self.bubbles.append(("say", (x, y, w, h)))
         return (x, y, w, h)
+
+    def bubbles_cover(self, px, py) -> bool:
+        """Liegt der Punkt in einer der zuletzt gezeichneten Blasen (für die Reihenfolge des Fadens)?"""
+        for kind, b in self.bubbles:
+            if kind == "say":
+                x, y, w, h = b
+                if x - 2 <= px <= x + w + 2 and y - 2 <= py <= y + h + 2:
+                    return True
+            else:
+                a, bb, rb = b["a"] + b["rb"], b["b"] + b["rb"], b["rb"]
+                if ((px - b["cx"]) / a) ** 2 + ((py - b["cy"]) / bb) ** 2 <= 1.0:
+                    return True
+        return False
 
     def lines(self, text, x, y, size, maxw, max_lines=3, lh=1.25, **kw):
         """Einfacher Zeilenumbruch; gibt Anzahl gezeichneter Zeilen zurück."""
@@ -702,16 +719,34 @@ class Pen:
             self.line(x + 3.6 * s, top + 5 * s, x + 10 * s, top + 11 * s, w=1.6 * s, color=color, amp=0)
 
     def brain(self, x, y, s=1.0, color=PINK, fill=(1.0, 0.87, 0.93)):
-        """Kleines Cartoon-Gehirn (pink): zwei Lappen mit Windungen und Stiel. (x, y) = Mitte."""
-        r = 7.0 * s
-        self.circle(x - 4.2 * s, y - 1.0 * s, r, w=1.7, color=color, fill=fill)
-        self.circle(x + 4.2 * s, y - 1.0 * s, r, w=1.7, color=color, fill=fill)
-        for pts in (((x - 9 * s, y - 3 * s), (x - 4 * s, y - 8 * s), (x - 1 * s, y - 3 * s)),
-                    ((x + 1 * s, y - 8 * s), (x + 6 * s, y - 8 * s), (x + 9 * s, y - 3 * s)),
-                    ((x - 10 * s, y + 2 * s), (x - 4 * s, y - 1 * s), (x - 1 * s, y + 3 * s)),
-                    ((x + 2 * s, y + 3 * s), (x + 5 * s, y - 1 * s), (x + 10 * s, y + 2 * s))):
-            self.curve(list(pts), w=1.1, color=color)
-        self.line(x, y + 6 * s, x, y + 10 * s, w=1.7, color=color, amp=0)     # Stiel
+        """Cartoon-Gehirn (pink): gewellte Kuppe mit Windungen, Kleinhirn und Stiel. (x, y) = Mitte.
+
+        Gibt die Stielspitze (x, y) zurück, an der der Modell-Faden ansetzt."""
+        w, h = 12.0 * s, 8.5 * s
+        # Umriss: oben drei Windungsbuckel, unten eine runde Kuppe
+        pts = []
+        for i in range(13):                                   # obere Kuppe
+            k = i / 12
+            pts.append((x - w + 2 * w * k,
+                        y - h * (0.55 + 0.5 * math.sin(math.pi * k)) - 1.7 * s * abs(math.sin(math.pi * 3 * k))))
+        for i in range(9):                                    # untere Rundung
+            k = i / 8
+            pts.append((x + w - 2 * w * k, y + h * (0.30 + 0.62 * math.sin(math.pi * k))))
+        self.poly(pts, closed=True, w=1.9, color=color, fill=fill)
+        # Windungen: kurze, geschwungene Falten in beiden Hälften
+        for pts2 in (((x - 8 * s, y - 3 * s), (x - 4 * s, y - 7 * s), (x - 1 * s, y - 2 * s)),
+                     ((x - 8 * s, y + 3 * s), (x - 4 * s, y - 0.5 * s), (x - 0.5 * s, y + 3.5 * s)),
+                     ((x + 1.5 * s, y - 7 * s), (x + 6 * s, y - 7.5 * s), (x + 8.5 * s, y - 2 * s)),
+                     ((x + 1 * s, y + 3.5 * s), (x + 5 * s, y - 0.5 * s), (x + 8.5 * s, y + 3 * s))):
+            self.curve(list(pts2), w=1.1, color=color)
+        self.line(x, y - h * 1.02, x, y + h * 0.55, w=1.0, color=color, amp=0)   # Mittelfurche
+        # Kleinhirn: kleiner gerippter Knubbel unten rechts
+        self.circle(x + 6.5 * s, y + h * 0.85, 4.6 * s, w=1.5, color=color, fill=fill)
+        for i in range(3):
+            self.line(x + 3.5 * s + i * 3 * s, y + h * 0.5, x + 4.2 * s + i * 3 * s, y + h * 1.25, w=0.9, color=color, amp=0)
+        # Stiel
+        self.line(x, y + h * 0.75, x, y + h * 1.35, w=2.0, color=color, amp=0)
+        return (x, y + h * 1.35)
 
     def coin(self, x, y, r=7, color=INK, fill=(1.0, 0.93, 0.55)):
         self.circle(x, y, r, w=1.6, color=color, fill=fill)

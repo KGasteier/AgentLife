@@ -557,6 +557,21 @@ class ModelThreadTest(unittest.TestCase):
                     n += 1
         return n
 
+    def _red(self, surf, box=None):
+        """Zählt kräftig rote Pixel (Aktivität/Fehler)."""
+        surf.flush()
+        buf, st = surf.get_data(), surf.get_stride()
+        x0, y0, x1, y1 = box or (0, 0, surf.get_width(), surf.get_height())
+        n = 0
+        for y in range(y0, y1):
+            row = y * st
+            for x in range(x0, x1):
+                i = row + 4 * x
+                r, g, b = buf[i + 2], buf[i + 1], buf[i]
+                if r > 150 and g < 110 and b < 110:
+                    n += 1
+        return n
+
     def test_brain_sits_left_of_the_model_name(self):
         from agentscope import model
         a = model.demo_agents(3.0)[0]
@@ -594,6 +609,64 @@ class ModelThreadTest(unittest.TestCase):
         bx, by = scene.brain_pos(a, tw)
         self.assertGreater(self._pink(surf, (int(bx) - 18, int(by) + 4, int(bx) + 18, int(by) + 70)), 5, "gerissener Faden fehlt")
         self.assertLess(self._pink(surf, (150, 130, 440, 340)), 5, "Faden hängt trotz Trennung zur Figur")
+
+    def test_regression_thread_has_exact_endpoints(self):
+        """Regression 0.8.2a: der Faden war eine freie Kurve mit Abstand zum Kopf (kleine Lücken)."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        a.phase, a.model = "thinking", "claude-opus-5-5"
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 3.0, None)
+        _, head = min(p.heads, key=lambda hh: abs(hh[0][0] - scene.ACTOR_X))
+        bx, by = p.brain_xy
+        pts = scene._thread_points(bx, by + 9, head[0] - 2, head[1] - 15, 3.0)
+        self.assertLessEqual(abs(pts[0][0] - bx), 0.6, "Faden startet nicht an der Stielspitze")
+        self.assertLessEqual(abs(pts[-1][0] - (head[0] - 2)), 0.6, "Faden endet nicht am Kopf")
+        self.assertLessEqual(abs(pts[-1][1] - (head[1] - 15)), 0.6, "Faden endet nicht am Kopf")
+        # der Anschlusspunkt am Kopf wird immer gezeichnet, auch wenn eine Blase darüber liegt
+        self.assertGreater(self._pink(surf, (int(head[0]) - 6, int(head[1]) - 20, int(head[0]) + 4, int(head[1]) - 8)), 0,
+                           "kein fester Anschluss am Kopf")
+
+    def test_regression_thread_hides_behind_bubbles(self):
+        """Regression 0.8.2a: der Faden lief sichtbar über die Gedankenblase."""
+        from agentscope import model
+        a = model.demo_agents(3.0)[0]
+        a.phase, a.model = "thinking", "claude-opus-5-5"
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 3.0, None)
+        thinks = [b for k, b in p.bubbles if k == "think"]
+        self.assertTrue(thinks, "keine Gedankenblase gezeichnet")
+        b = thinks[0]
+        # Blaseninneres: dort darf kein Faden zu sehen sein
+        self.assertEqual(self._pink(surf, (int(b["cx"] - 30), int(b["cy"] - 20), int(b["cx"] + 30), int(b["cy"] + 20))), 0,
+                         "Faden liegt sichtbar über der Gedankenblase")
+
+    def test_regression_brain_is_larger_and_returns_stem_tip(self):
+        """Regression 0.8.2a: das Gehirn war zu klein und kaum als Gehirn erkennbar."""
+        surf, cr = self._blank(300, 120)
+        p = Pen(cr)
+        tip = p.brain(150, 60, 1.25)
+        self.assertAlmostEqual(tip[0], 150.0, places=1)
+        self.assertGreater(tip[1], 60 + 8 * 1.25, "Stielspitze fehlt")
+        self.assertGreater(self._pink(surf, (120, 30, 180, 100)), 300, "Gehirn zu klein/kaum sichtbar")
+
+    def test_regression_no_model_shows_no_activity(self):
+        """Regression 0.8.2a: ohne Modell zeigten Hoppla-Zähler, Balken und Tacho weiter Aktivität."""
+        from agentscope import model
+        a = model.demo_agents(6.0)[0]
+        a.model = ""
+        a.errors, a.tool_counts = 7, {"bash": 9, "read": 5}
+        surf, cr = self._blank()
+        p = Pen(cr)
+        scene.render_panel(p, a, 6.0, None)
+        # Hoppla-Bereich: keine roten Striche mehr
+        self.assertEqual(self._red(surf, (690, 430, 990, 470)), 0, "Hoppla-Zähler zeigt ohne Modell Aktivität")
+        # Tacho: Nadel steht links, keine Tokens
+        self.assertEqual(self._red(surf, (640, 130, 750, 230)), 0, "Tacho zeigt ohne Modell Aktivität")
+        src = open(scene.__file__).read()
+        self.assertIn("0 – kein Modell", src)
 
     def test_thread_survives_walking_and_jumping_poses(self):
         from agentscope import model

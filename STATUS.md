@@ -1,5 +1,12 @@
 # STATUS
 
+## Stand 0.8.2a
+- **Faden liegt hinter den Blasen:** `Pen.bubbles` sammelt die Geometrie aller Sprech-/Gedankenblasen (auch der Terminal-Blase in `acts._terminal`), `Pen.bubbles_cover` prüft Punkte; `scene._thread_behind` zeichnet den Faden in Abschnitten und lässt ihn hinter Blasen verschwinden. Regressionstest `test_regression_thread_hides_behind_bubbles`.
+- **Faden endet fest am Kopf:** `scene._thread_points` hat an beiden Enden exakt 0 Ausschlag (Hüllkurve `sin(πk)`), der Anschlusspunkt am Kopf wird zusätzlich als kleiner Punkt gezeichnet – keine Lücken mehr. Regressionstest `test_regression_thread_has_exact_endpoints`.
+- **Gehirn größer und deutlicher:** `Pen.brain` ist ein richtiges Cartoon-Gehirn (Kuppe mit drei Windungsbuckeln, Mittelfurche, vier Windungen, geripptes Kleinhirn, Stiel) und gibt die Stielspitze für den Faden zurück; im Titel mit `s=1.25`. Regressionstest `test_regression_brain_is_larger_and_returns_stem_tip`.
+- **Ohne Modell keine Aktivität:** `scene.has_model` schaltet Tacho (Nadel links, „0“, „kein Modell angewählt“), Kontextglas („leer“), Kurve („keine Aktivität“), Notizblock, Werkzeugbalken, Minions und Hoppla-Zähler („0 – kein Modell“) still; die Figur bleibt die leblose Puppe mit gerissenem Faden. Regressionstest `test_regression_no_model_shows_no_activity`.
+- Tests: Python 70, Node 12. Auf dem alten Stand `309fa5b` scheitern 3 der neuen Tests (1 failure, 2 errors).
+
 ## Stand 0.8.2
 - **Pinkes Gehirn im Titel:** Links vom Modellnamen sitzt ein kleines pinkes Cartoon-Gehirn (`sketch.PINK`, `Pen.brain(x, y, s)` – zwei Lappen mit Windungen und Stiel), gezeichnet in der statischen Ebene (`render_panel`), Position über `scene.brain_pos(a, title_width)`.
 - **Feiner Faden zum Kopf:** `scene._model_thread` zieht einen 0,7 px dünnen pinken Faden vom Gehirn zum Kopf der Hauptfigur. Der Kopf wird aus `Pen.heads` (Hüfte/Kopf aller gezeichneten Figuren) als der zur Sitzposition `cx` nächstgelegene gewählt – der Faden folgt also in **allen** Posen (Laufen, Springen, Tai-Chi, Karate …) und wackelt luftig (`sag` + Sinuswelle mit `t`). Dynamische Ebene, nicht gecacht.

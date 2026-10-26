@@ -269,6 +269,7 @@ def _terminal(p, t, label):
             p.text("$ " + txt if k % 4 == 0 else txt, x + 8, y + 34 + i * 14, 10, color=INK if i == 5 else GRAY, upper=False, jitter=0.3, maxw=w - 14)
     if int(t * 3) % 2:
         p.rect(x + 8, y + 36 + 5 * 14 - 8, 6, 10, lw=1, fill=INK)
+    p.bubbles.append(("say", (x, y, w, h)))       # Faden soll dahinter verschwinden
 
 def bash_terminal(p, a, t, c):
     tool = a.tools[0]
