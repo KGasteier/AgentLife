@@ -40,6 +40,173 @@ class LiveTest(unittest.TestCase):
             self.assertEqual(agents[0].title, "Work/proj")
             self.assertEqual(agents[0].model, "opus")
 
+    def test_mirror_reads_remote_without_local_pid(self):
+        """Regression: gespiegelte Fern-Zustände müssen ohne lokalen Prozess gelesen werden.
+
+        Auf dem anderen Rechner laufen die PIDs, die in der Datei stehen; `pid_alive` schlägt hier
+        also fehl. Stattdessen entscheidet die Schreibfrische. Subagent-Kinder bleiben über `ppid`
+        zugeordnet, weil copi das ganze Verzeichnis spiegelt."""
+        with tempfile.TemporaryDirectory() as d:
+            mirror = os.path.join(d, "ssh-r2")
+            os.makedirs(mirror)
+            for s in (state(4242), state(4243, ppid=4242)):
+                with open(os.path.join(mirror, f"{s['pid']}.json"), "w") as f:
+                    json.dump(s, f)
+            now = time.time()
+            agents, sessions = model.read_mirrors(now=now, dirs=[("ssh-r2", mirror)])
+            self.assertEqual([a.key for a in agents], ["remote:ssh-r2:4242"])
+            self.assertEqual(len(agents[0].children), 1)
+            self.assertTrue(agents[0].remote)
+            self.assertEqual(agents[0].backend, "ssh-r2")
+            self.assertIn("/s/4242.jsonl", sessions)
+
+    def test_mirror_ignores_stale_and_lists_backends(self):
+        """Ruhende Spiegeldateien zählen nicht, und je Backend entsteht ein eigener Ordner."""
+        with tempfile.TemporaryDirectory() as d:
+            for name in ("ssh-r2", "ssh-b2"):
+                os.makedirs(os.path.join(d, name))
+                with open(os.path.join(d, name, "7.json"), "w") as f:
+                    json.dump(state(7), f)
+            old = time.time() - model.MIRROR_FRESH_S - 60
+            os.utime(os.path.join(d, "ssh-b2", "7.json"), (old, old))
+            dirs = model.mirror_dirs(d)
+            self.assertEqual([b for b, _ in dirs], ["ssh-b2", "ssh-r2"])
+            agents, _ = model.read_mirrors(dirs=dirs)
+            self.assertEqual([a.key for a in agents], ["remote:ssh-r2:7"])
+
+    def test_mirror_never_double_counts_the_local_runtime_dir(self):
+        """Regression: ein versehentlich als Spiegel eingetragenes Live-Verzeichnis darf keine Panels verdoppeln."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "9.json"), "w") as f:
+                json.dump(state(9), f)
+            old = model.RUNTIME_DIR
+            model.RUNTIME_DIR = d
+            try:
+                self.assertEqual(model.mirror_dirs(d), [])
+            finally:
+                model.RUNTIME_DIR = old
+
+    def test_mirror_env_override_adds_extra_dirs(self):
+        """Zusätzliche Spiegelordner lassen sich per Umgebungsvariable anhängen (Tests, Sonderfälle)."""
+        with tempfile.TemporaryDirectory() as d:
+            e = os.path.join(d, "extra")
+            os.makedirs(e)
+            with open(os.path.join(e, "3.json"), "w") as f:
+                json.dump(state(3), f)
+            old = os.environ.get(model.MIRROR_ENV)
+            os.environ[model.MIRROR_ENV] = e
+            try:
+                agents, _ = model.read_mirrors(dirs=model.mirror_dirs(os.path.join(d, "leer")))
+            finally:
+                if old is None:
+                    os.environ.pop(model.MIRROR_ENV, None)
+                else:
+                    os.environ[model.MIRROR_ENV] = old
+            self.assertEqual([a.key for a in agents], ["remote:extra:3"])
+
+    def test_mirror_reads_one_subdir_per_source(self):
+        """Regression: copi legt je Quellverzeichnis einen Unterordner an (sonst würde `--delete`
+        die Dateien des anderen Durchlaufs entfernen). Beide müssen zusammen gelesen werden,
+        damit die `ppid`-Zuordnung der Subagenten über die Ordnergrenze hinweg funktioniert."""
+        with tempfile.TemporaryDirectory() as d:
+            backend = os.path.join(d, "ssh-r2")
+            a = os.path.join(backend, "run-user-1000-agentscope")
+            b = os.path.join(backend, "home-medienhaus--local-state-agentscope")
+            os.makedirs(a)
+            os.makedirs(b)
+            with open(os.path.join(a, "100.json"), "w") as f:
+                json.dump(state(100), f)
+            with open(os.path.join(b, "101.json"), "w") as f:
+                json.dump(state(101, ppid=100), f)
+            agents, _ = model.read_mirrors(dirs=[("ssh-r2", backend)])
+            self.assertEqual([x.key for x in agents], ["remote:ssh-r2:100"], "Kind gehört zum Elternpanel, nicht als eigenes")
+            self.assertEqual(len(agents[0].children), 1, "Kind aus dem zweiten Unterordner")
+
+    def test_mirror_root_follows_xdg_cache_home(self):
+        """Regression: copi (Rust) legt den Spiegel unter `dirs::cache_dir()` ab, das
+        `XDG_CACHE_HOME` beachtet. Hardcodierte `~/.cache` in Python würde auf Systemen mit
+        gesetztem `XDG_CACHE_HOME` einen anderen Ordner lesen – der Screensaver bliebe leer."""
+        old = os.environ.get("XDG_CACHE_HOME")
+        try:
+            os.environ["XDG_CACHE_HOME"] = "/tmp/cache-x"
+            self.assertEqual(model._cache_root(), "/tmp/cache-x/copi/agentscope-remote")
+            os.environ.pop("XDG_CACHE_HOME", None)
+            self.assertTrue(model._cache_root().endswith(".cache/copi/agentscope-remote"))
+        finally:
+            if old is None:
+                os.environ.pop("XDG_CACHE_HOME", None)
+            else:
+                os.environ["XDG_CACHE_HOME"] = old
+
+    def test_mirror_reads_nested_backend_root(self):
+        """Regression: Wird die Wurzel als Spiegelordner angegeben (z. B. per Umgebungsvariable),
+        liegen die Dateien erst unter `<Wurzel>/<backend>/<quellordner>/`. Ein flaches `*/*.json`
+        findet sie nicht und der Screensaver zeigt fälschlich nichts."""
+        with tempfile.TemporaryDirectory() as d:
+            deep = os.path.join(d, "ssh-r2", "run-user-1000-agentscope")
+            os.makedirs(deep)
+            with open(os.path.join(deep, "77.json"), "w") as f:
+                json.dump(state(77), f)
+            agents, _ = model.read_mirrors(dirs=[("ssh-r2", d)])
+            self.assertEqual([a.key for a in agents], ["remote:ssh-r2:77"])
+
+    def test_sync_remote_is_quiet_without_binary_and_rate_limited(self):
+        """Ohne copi im PATH geschieht nichts; mit Programm läuft höchstens ein Aufruf je Fenster."""
+        old_bin = os.environ.get(model.SYNC_ENV)
+        old_state = (model._SYNC_LAST, model._SYNC_BUSY)
+        try:
+            model._SYNC_LAST, model._SYNC_BUSY = 0.0, False
+            os.environ[model.SYNC_ENV] = "/gibt/es/nicht"
+            self.assertFalse(model.sync_remote(force=True), "fehlendes Programm wird nicht gestartet")
+            os.environ[model.SYNC_ENV] = "true"   # /usr/bin/true: endet sofort, ändert nichts
+            self.assertTrue(model.sync_remote(force=True, now=1000.0))
+            self.assertFalse(model.sync_remote(now=1001.0), "zu kurz danach kein zweiter Aufruf")
+            # Busy-Sperre wird vom Thread gelöst; hier nur prüfen, dass sie nicht dauerhaft klemmt.
+            for _ in range(100):
+                if not model._SYNC_BUSY:
+                    break
+                time.sleep(0.02)
+            self.assertFalse(model._SYNC_BUSY)
+        finally:
+            if old_bin is None:
+                os.environ.pop(model.SYNC_ENV, None)
+            else:
+                os.environ[model.SYNC_ENV] = old_bin
+            model._SYNC_LAST, model._SYNC_BUSY = old_state
+
+    def test_sync_skips_binaries_that_do_not_know_the_flag(self):
+        """Regression: ein alter cocopi-Build kannte `--sync-states` nicht und öffnete bei jedem
+        Takt ein neues Fenster. Gesucht wird nur ein Programm, das das Flag enthält."""
+        with tempfile.TemporaryDirectory() as d:
+            alt, neu = os.path.join(d, "cocopi"), os.path.join(d, "copi")
+            for f, inhalt in ((alt, b"#!/bin/sh\n--shot\n"), (neu, b"#!/bin/sh\n--sync-states\n")):
+                with open(f, "wb") as fh:
+                    fh.write(inhalt)
+                os.chmod(f, 0o755)
+            old = os.environ.get("PATH"), os.environ.pop(model.SYNC_ENV, None)
+            os.environ["PATH"] = d
+            try:
+                self.assertEqual(model._sync_binary(), neu)
+            finally:
+                os.environ["PATH"] = old[0]
+                if old[1] is not None:
+                    os.environ[model.SYNC_ENV] = old[1]
+
+    def test_sync_remote_can_be_switched_off(self):
+        """Der Abruf lässt sich per Umgebungsvariable abschalten (kein Netz im Test/Vortrag)."""
+        old_off = os.environ.get(model.SYNC_OFF_ENV)
+        old_bin = os.environ.get(model.SYNC_ENV)
+        try:
+            os.environ[model.SYNC_ENV] = "true"
+            os.environ[model.SYNC_OFF_ENV] = "off"
+            self.assertFalse(model.sync_remote(force=True), "abgeschaltet startet nichts")
+        finally:
+            for k, v in ((model.SYNC_OFF_ENV, old_off), (model.SYNC_ENV, old_bin)):
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
 
 def jl(*objs):
     return [json.dumps(o) for o in objs]

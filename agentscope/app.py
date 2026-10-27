@@ -67,7 +67,13 @@ class Scope(Gtk.ApplicationWindow):
     def poll(self):
         now = time.time()
         try:
-            self.agents = model.demo_agents(time.monotonic() - self.t0) if self.demo else model.collect(now)
+            if self.demo:
+                self.agents = model.demo_agents(time.monotonic() - self.t0)
+            else:
+                # Fern-Spiegel im Hintergrund auffrischen lassen (copi --sync-states); der
+                # aktuell gelesene Stand wird davon nicht blockiert.
+                model.sync_remote(now=now)
+                self.agents = model.collect(now)
         except Exception as e:  # Anzeige darf nie abstürzen
             print(f"agentscope: poll failed: {e}", file=sys.stderr)
         self.hist.sample(self.agents, now)

@@ -5,6 +5,11 @@
  *
  * Läuft in allen Modi (tui, rpc, json/print). Subagent-Kindprozesse (pi --mode json)
  * laden die Erweiterung ebenfalls und tragen über `ppid` ihre Herkunft ein.
+ *
+ * Für entfernte Backends (copi/cocopi über SSH) setzt `AGENTSCOPE_DIR` ein festes, gut
+ * auffindbares Ziel: dort fehlt `XDG_RUNTIME_DIR` in nackten SSH-Sitzungen, und `/tmp`
+ * wäre nicht stabil genug zum Spiegeln.
+ *
  * Abschalten: AGENTSCOPE=off.
  */
 
@@ -12,9 +17,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { Tracker } from "./core.ts";
+import { stateDir, Tracker } from "./core.ts";
 
-const DIR = path.join(process.env.XDG_RUNTIME_DIR ?? os.tmpdir(), "agentscope");
+const DIR = stateDir(process.env, os.tmpdir());
 const FILE = path.join(DIR, `${process.pid}.json`);
 const MIN_INTERVAL_MS = 250;
 const HEARTBEAT_MS = 2000;

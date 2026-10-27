@@ -5,6 +5,8 @@
  * (Schema v1, siehe docs/STATE.md), den die Erweiterung atomar als JSON ablegt.
  */
 
+import { isAbsolute, join, resolve } from "node:path";
+
 export type Phase = "idle" | "thinking" | "streaming" | "tool" | "compacting" | "retrying" | "error";
 
 export interface ScopeEvent {
@@ -71,6 +73,17 @@ export interface ScopeState {
 const MAX_EVENTS = 40;
 const MAX_RUNS = 4;
 const RATE_WINDOW_MS = 4000;
+
+/**
+ * Zielverzeichnis der Zustandsdateien. `AGENTSCOPE_DIR` gewinnt und ist der Haken für entfernte
+ * Backends (copi/cocopi über SSH): dort fehlt `XDG_RUNTIME_DIR` in nackten SSH-Sitzungen, und
+ * `/tmp` ist zu unbeständig zum Spiegeln. Danach das übliche Laufzeitverzeichnis, sonst `tmp`.
+ */
+export function stateDir(env: Record<string, string | undefined>, tmp: string): string {
+	const override = (env.AGENTSCOPE_DIR ?? "").trim();
+	if (override) return isAbsolute(override) ? override : resolve(override);
+	return join(env.XDG_RUNTIME_DIR ?? tmp, "agentscope");
+}
 
 export function clip(s: unknown, n: number): string {
 	const t = String(s ?? "").replace(/\s+/g, " ").trim();

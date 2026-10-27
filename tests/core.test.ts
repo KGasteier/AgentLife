@@ -1,8 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseSubagentDetails, toolLabel, Tracker } from "../extension/core.ts";
+import { parseSubagentDetails, stateDir, toolLabel, Tracker } from "../extension/core.ts";
 
 const mk = () => new Tracker({ pid: 10, ppid: 1, cwd: "/w", now: 0 });
+
+test("stateDir: AGENTSCOPE_DIR gewinnt, sonst XDG_RUNTIME_DIR, sonst tmp", () => {
+	// Regression: entfernte Backends brauchen ein festes Ziel – in nackten SSH-Sitzungen fehlt
+	// XDG_RUNTIME_DIR, und /tmp wäre zum Spiegeln zu unbeständig.
+	assert.equal(stateDir({ AGENTSCOPE_DIR: "/home/u/.agentscope-state" }, "/tmp"), "/home/u/.agentscope-state");
+	assert.equal(stateDir({ AGENTSCOPE_DIR: "  /x/y  " }, "/tmp"), "/x/y");
+	assert.equal(stateDir({ XDG_RUNTIME_DIR: "/run/user/1000" }, "/tmp"), "/run/user/1000/agentscope");
+	assert.equal(stateDir({}, "/tmp"), "/tmp/agentscope");
+	// Der Override schlägt auch ein vorhandenes XDG_RUNTIME_DIR.
+	assert.equal(stateDir({ AGENTSCOPE_DIR: "/fest", XDG_RUNTIME_DIR: "/run/user/1000" }, "/tmp"), "/fest");
+	// Leerer Override zählt nicht als gesetzt.
+	assert.equal(stateDir({ AGENTSCOPE_DIR: "   ", XDG_RUNTIME_DIR: "/run/user/1" }, "/tmp"), "/run/user/1/agentscope");
+});
 
 test("toolLabel kürzt sinnvoll", () => {
 	assert.equal(toolLabel("read", { path: "/a/b/main.rs" }), "main.rs");

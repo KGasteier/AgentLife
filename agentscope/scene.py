@@ -297,8 +297,12 @@ def session_label(a: Agent) -> str:
 
 
 def panel_title(a: Agent) -> str:
-    """Beschriftung links oben: Harness · Skill/Sitzungsname, immer mit Sitzungsinfo."""
+    """Beschriftung links oben: Harness · Skill/Sitzungsname, immer mit Sitzungsinfo.
+    Gespiegelte Fern-Sitzungen tragen ihr Backend bei (`pi@ssh-r2`), damit lokal und remote nicht verwechselt wird."""
     harness = getattr(a, "harness", "pi") or "pi"
+    backend = getattr(a, "backend", "") or ""
+    if backend:
+        harness = f"{harness}@{backend}"
     short = (getattr(a, "skill", "") or (a.title or "").strip())
     if not short or short == "?":
         short = session_label(a)

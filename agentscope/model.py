@@ -17,10 +17,30 @@ import json
 import math
 import os
 import re
+import shutil
+import subprocess
+import threading
 import time
 from dataclasses import dataclass, field
 
 RUNTIME_DIR = os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "agentscope")
+# Spiegel entfernter Backends (copi zieht sie per rsync von SSH-Servern hierher, siehe Akt 3).
+# Anders als die lokalen Live-Dateien gilt hier nicht `pid_alive` – entfernte PIDs gibt es lokal nicht –
+# sondern die Schreibfrische: copi frischt den Spiegel fortlaufend auf, solange der Agent läuft.
+def _cache_root() -> str:
+    """Cache-Wurzel wie copi (Rust `dirs::cache_dir`): `XDG_CACHE_HOME` schlägt `~/.cache`.
+    Beide Seiten müssen denselben Ort lesen, sonst findet der Screensaver den Spiegel nicht."""
+    env = (os.environ.get("XDG_CACHE_HOME") or "").strip()
+    return os.path.join(env, "copi", "agentscope-remote") if env else os.path.expanduser("~/.cache/copi/agentscope-remote")
+
+
+MIRROR_ROOT = _cache_root()
+MIRROR_ENV = "AGENTSCOPE_MIRRORS"   # Doppelpunkt-getrennte Liste zusätzlicher Spiegelordner
+MIRROR_FRESH_S = 120                 # Spiegeldateien, die länger ruhen, gelten als tot
+MIRROR_SYNC_S = 20                   # so oft darf copi den Spiegel auffrischen
+SYNC_BINS = ("cocopi", "copi")       # Reihenfolge: cocopi zuerst, copi als Rückfall
+SYNC_ENV = "AGENTSCOPE_SYNC_BIN"     # fester Pfad/Name statt der Suche
+SYNC_OFF_ENV = "AGENTSCOPE_SYNC"     # "off" schaltet das Auffrischen ab
 SESSIONS_DIR = os.path.expanduser("~/.pi/agent/sessions")
 SKILL_DIRS = [os.path.expanduser("~/.pi/agent/skills"), os.path.expanduser("~/.agents/skills")]
 BUSY_MAX_S = 10 * 60      # Log endet mit offener Anfrage: so lange gilt der Agent als beschäftigt
@@ -28,6 +48,10 @@ SESSION_FRESH_S = 15 * 60  # Logs, die länger ruhen, gelten als inaktiv
 RATE_WINDOW_S = 90         # Log-Fallback: Antworten der letzten 90 s mitteln
 RATE_HOLD_S = 25           # … und die Rate so lange nach der letzten Antwort noch zeigen
 TAIL_BYTES = 768 * 1024
+
+# Auffrischungs-Takt der Fern-Spiegel (modulweit, damit mehrere Aufrufer ihn teilen).
+_SYNC_LAST = 0.0
+_SYNC_BUSY = False
 
 
 @dataclass
@@ -67,6 +91,8 @@ class Agent:
     events: list = field(default_factory=list)
     updated: float = 0.0
     idle_since: float | None = None  # Wanduhr: seit wann fertig (nur gesetzt, wenn der Übergang beobachtet wurde)
+    backend: str = ""   # copi-Backend-Kennung bei gespiegelten Fern-Sitzungen (z. B. ssh-r2), sonst leer
+    remote: bool = False  # läuft der Prozess auf einem anderen Rechner?
 
     @property
     def idle_for(self) -> float | None:
@@ -149,16 +175,19 @@ def session_name_from_file(path: str | None) -> str | None:
     return name
 
 
-def agent_from_state(s: dict) -> Agent:
+def agent_from_state(s: dict, backend: str = "") -> Agent:
     ctx = s.get("context") or {}
     tok = s.get("tokens") or {}
     comp = s.get("compaction") or {}
     le = s.get("lastError") or {}
     title = s.get("sessionName") or session_name_from_file(s.get("sessionFile")) or _short_cwd(s.get("cwd") or "?")
+    pid = s.get("pid")
     return Agent(
-        key=f"pid:{s.get('pid')}",
+        key=f"remote:{backend}:{pid}" if backend else f"pid:{pid}",
         title=title,
         source="live",
+        backend=backend,
+        remote=bool(backend),
         phase=s.get("phase", "idle"),
         prompt=s.get("prompt", ""),
         model=(s.get("model") or "").split("/")[-1],
@@ -188,6 +217,23 @@ def agent_from_state(s: dict) -> Agent:
     )
 
 
+def _group_states(states: dict, backend: str = "") -> tuple[list[Agent], set[str]]:
+    """Aus Live-Dateien Panels bauen: Prozesse, deren ppid selbst eine Live-Datei hat, sind Subagent-Kinder."""
+    sessions = {s["sessionFile"] for s in states.values() if s.get("sessionFile")}
+    tops, kids = [], {}
+    for pid, s in states.items():
+        if s.get("ppid") in states:
+            kids.setdefault(s["ppid"], []).append(s)
+        else:
+            tops.append(s)
+    agents = []
+    for s in sorted(tops, key=lambda x: x.get("started", 0)):
+        a = agent_from_state(s, backend=backend)
+        a.children = sorted(kids.get(s["pid"], []), key=lambda x: x.get("started", 0))
+        agents.append(a)
+    return agents, sessions
+
+
 def read_live(runtime_dir: str = RUNTIME_DIR, alive=pid_alive) -> tuple[list[Agent], set[str]]:
     """Liest Live-Dateien. Gibt (Top-Level-Agenten, belegte Session-Dateien) zurück."""
     states = {}
@@ -201,18 +247,60 @@ def read_live(runtime_dir: str = RUNTIME_DIR, alive=pid_alive) -> tuple[list[Age
         if s.get("v") != 1 or not isinstance(pid, int) or not alive(pid):
             continue
         states[pid] = s
-    sessions = {s["sessionFile"] for s in states.values() if s.get("sessionFile")}
-    tops, kids = [], {}
-    for pid, s in states.items():
-        if s.get("ppid") in states:
-            kids.setdefault(s["ppid"], []).append(s)
-        else:
-            tops.append(s)
-    agents = []
-    for s in sorted(tops, key=lambda x: x.get("started", 0)):
-        a = agent_from_state(s)
-        a.children = sorted(kids.get(s["pid"], []), key=lambda x: x.get("started", 0))
-        agents.append(a)
+    return _group_states(states)
+
+
+def mirror_dirs(root: str = MIRROR_ROOT) -> list[tuple[str, str]]:
+    """Spiegelordner entfernter Backends: (backend-id, Pfad). Das lokale Live-Verzeichnis ist dabei
+    ausgenommen, damit ein versehentlich hineinkopierter Spiegel keine Panels verdoppelt."""
+    extra = [p for p in (os.environ.get(MIRROR_ENV) or "").split(os.pathsep) if p.strip()]
+    found = []
+    for base, sub in [(root, True)] + [(p, False) for p in extra]:
+        if not os.path.isdir(base):
+            continue
+        if sub:
+            for name in sorted(os.listdir(base)):
+                d = os.path.join(base, name)
+                if os.path.isdir(d) and os.path.abspath(d) != os.path.abspath(RUNTIME_DIR):
+                    found.append((name, d))
+        elif os.path.abspath(base) != os.path.abspath(RUNTIME_DIR):
+            found.append((os.path.basename(base.rstrip("/")) or base, base))
+    return found
+
+
+def read_mirrors(now: float | None = None, fresh_s: float = MIRROR_FRESH_S,
+                 dirs: list[tuple[str, str]] | None = None) -> tuple[list[Agent], set[str]]:
+    """Spiegel entfernter Backends lesen (copi zieht sie per rsync auf diesen Rechner).
+
+    Entfernte PIDs gibt es lokal nicht – deshalb entscheidet hier die Schreibfrische statt
+    `pid_alive`. Zusätzlich zu den Top-Level-Agenten kommen ihre Subagent-Kinder mit: copi
+    spiegelt das ganze Verzeichnis, die `ppid`-Verknüpfung bleibt also erhalten."""
+    now = time.time() if now is None else now
+    dirs = mirror_dirs() if dirs is None else dirs
+    agents: list[Agent] = []
+    sessions: set[str] = set()
+    for backend, d in dirs:
+        states = {}
+        # copi legt je Quellverzeichnis des Servers einen Unterordner an (Laufzeitverzeichnis und
+        # Ausweichpfad getrennt, weil `--delete` sie sonst gegenseitig leeren würde). Beide gehören
+        # zum selben Backend: erst zusammen ergibt die `ppid`-Verknüpfung vollständige Panels.
+        # Rekursiv, damit die Zahl der Zwischenebenen (Backend/Wurzel-Quellordner) keine Rolle spielt.
+        files = glob.glob(os.path.join(d, "**", "*.json"), recursive=True)
+        for f in files:
+            try:
+                if now - os.path.getmtime(f) > fresh_s:
+                    continue
+                with open(f) as fh:
+                    s = json.load(fh)
+            except Exception:
+                continue
+            pid = s.get("pid")
+            if s.get("v") != 1 or not isinstance(pid, int):
+                continue
+            states[pid] = s
+        part, sess = _group_states(states, backend=backend)
+        agents.extend(part)
+        sessions |= sess
     return agents, sessions
 
 
@@ -425,12 +513,74 @@ def read_sessions(exclude: set[str], sessions_dir: str = SESSIONS_DIR, now: floa
     return out
 
 
+def sync_remote(force: bool = False, now: float | None = None) -> bool:
+    """Spiegel der Fern-Zustände auffrischen, indem copi kurz `--sync-states` ausführt.
+
+    Der Screensaver läuft, wenn copi geschlossen ist; die SSH-Konfiguration und das Token liegen
+    aber in copi. Deshalb ruft agentscope copi als kurzen Unterprozess auf (headless, nur lesend)
+    und liest danach den lokalen Spiegel. Nicht blockierend: der Unterprozess läuft in einem
+    eigenen Thread, und höchstens alle `MIRROR_SYNC_S` Sekunden.
+
+    Rückgabe: ob diesmal gestartet wurde.
+    """
+    global _SYNC_LAST, _SYNC_BUSY
+    if (os.environ.get(SYNC_OFF_ENV) or "").lower() in ("off", "0", "false", "nein"):
+        return False
+    now = time.time() if now is None else now
+    if _SYNC_BUSY or (not force and now - _SYNC_LAST < MIRROR_SYNC_S):
+        return False
+    binary = _sync_binary()
+    if not binary:
+        return False
+    _SYNC_LAST = now
+    _SYNC_BUSY = True
+
+    def work():
+        global _SYNC_BUSY
+        try:
+            subprocess.run([binary, "--sync-states"], capture_output=True, timeout=120)
+        except Exception:
+            pass
+        finally:
+            _SYNC_BUSY = False
+
+    threading.Thread(target=work, daemon=True).start()
+    return True
+
+
+def _sync_binary() -> str | None:
+    """Programm für die Spiegel-Auffrischung finden (ausdrücklich gesetzt oder im PATH)."""
+    explicit = (os.environ.get(SYNC_ENV) or "").strip()
+    if explicit:
+        p = explicit if os.path.isabs(explicit) else shutil.which(explicit)
+        return p if p and os.access(p, os.X_OK) else None
+    for name in SYNC_BINS:
+        p = shutil.which(name)
+        if p and _knows_sync(p):
+            return p
+    return None
+
+
+def _knows_sync(path: str) -> bool:
+    """Nur Programme starten, die `--sync-states` kennen. Ein älterer Build würde das Argument
+    ignorieren und stattdessen sein Fenster öffnen – bei jedem Takt eine neue Instanz."""
+    try:
+        with open(path, "rb") as fh:
+            return b"--sync-states" in fh.read()
+    except OSError:
+        return False
+
+
 def collect(now: float | None = None) -> list[Agent]:
-    """Alle Harnessse: pi (live, sonst Log) zuerst, dann Claude Code und Codex."""
+    """Alle Harnessse: pi (live, sonst Log) zuerst, dann gespiegelte Fern-Backends, dann Claude Code und Codex."""
     live, sessions = read_live()
+    mirror, mirror_sessions = read_mirrors(now=now)
     pi = live + read_sessions(sessions, now=now)
+    # Fern-Sitzungen decken keine lokalen Logs ab (die Pfade liegen auf dem anderen Rechner): eigene Menge,
+    # damit ein gespiegelter Agent nicht als lokales Log-Panel doppelt erscheint.
+    fern = read_sessions(mirror_sessions, now=now) if mirror_sessions else []
     from . import harnesses
-    return pi + harnesses.read_claude(now=now) + harnesses.read_codex(now=now)
+    return pi + mirror + fern + harnesses.read_claude(now=now) + harnesses.read_codex(now=now)
 
 
 # --------------------------------------------------------------------- Demo
