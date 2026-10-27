@@ -396,6 +396,36 @@ class HarnessTest(unittest.TestCase):
 
 
 class SceneTest(unittest.TestCase):
+    def test_active_panels_get_pink_frame_idle_ones_do_not(self):
+        """Regression: aktive Prozesse waren von ruhigen nicht zu unterscheiden."""
+        from agentscope import scene
+        ags = model.demo_agents(7)
+        busy = next(a for a in ags if a.phase != "idle" and scene.has_model(a))
+        self.assertTrue(scene.is_active(busy))
+        busy.phase = "idle"
+        self.assertFalse(scene.is_active(busy))
+
+    def test_needle_number_is_drawn_large(self):
+        """Regression: die Nadelzahl (tok/s) war klein und am Drehpunkt kaum zu sehen."""
+        from agentscope import scene, sketch
+        import cairo
+        calls = []
+        orig = sketch.Pen.text
+        def spy(self, s_, x, y, size=18, *a, **k):
+            calls.append((s_, size))
+            return orig(self, s_, x, y, size, *a, **k)
+        sketch.Pen.text = spy
+        try:
+            a = model.demo_agents(7)[0]
+            a.rate = 42.0
+            surf = cairo.ImageSurface(cairo.FORMAT_RGB24, 1000, 560)
+            p = sketch.Pen(cairo.Context(surf))
+            p.layer = "dynamic"
+            scene.draw_gauge(p, a, 7.0, 690, 140)
+        finally:
+            sketch.Pen.text = orig
+        self.assertIn(("42", 36), calls)
+
     def render(self, agents, t=3.0, W=1280, H=720):
         surf = cairo.ImageSurface(cairo.FORMAT_RGB24, W, H)
         scene.render(cairo.Context(surf), W, H, agents, t, scene.History())

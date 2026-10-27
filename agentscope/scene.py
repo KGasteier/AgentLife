@@ -309,6 +309,24 @@ def panel_title(a: Agent) -> str:
     return f"{harness} · {short}"
 
 
+def is_active(a: Agent) -> bool:
+    """Arbeitet gerade (nicht idle, Modell angebunden) – solche Panels bekommen den rosa Rahmen."""
+    return has_model(a) and a.phase != "idle"
+
+
+def draw_active_frame(p: Pen, t: float):
+    """Zweite, rosa Umrandung außerhalb des schwarzen Rahmens plus weicher Schatten.
+    Die Linie atmet leicht, damit aktive Prozesse auch aus der Ferne auffallen."""
+    cr = p.cr
+    pulse = 0.5 + 0.5 * math.sin(t * 2.4)
+    for i, (grow, al) in enumerate(((11, 0.05), (8, 0.08), (5, 0.12))):   # weicher Schatten nach außen
+        cr.set_source_rgba(*PINK, al + 0.04 * pulse)
+        cr.set_line_width(grow)
+        cr.rectangle(-4 + 3, -4 + 4, PW + 8, PH + 8)                    # leicht nach unten-rechts versetzt
+        cr.stroke()
+    p.rect(-7, -7, PW + 14, PH + 14, lw=2.4, color=PINK)
+
+
 def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
     title = p.fit(panel_title(a), 22, 420)
     tw = p.text_width(title, 22, bold=True)
@@ -327,6 +345,8 @@ def render_panel(p: Pen, a: Agent, t: float, hist: History | None):
         p.brain_xy = brain_pos(a, tw)
         p.brain_tip = None
     if p.dy:
+        if is_active(a):
+            draw_active_frame(p, t)
         phase_txt = PHASE_WORDS.get(a.phase, a.phase)
         if has_model(a):
             # Modellname farbig; ohne Anbindung zusätzlich deutlich als Defekt markiert
@@ -937,10 +957,13 @@ def draw_gauge(p: Pen, a: Agent, t: float, cx, cy, r=78, vmax=150.0, hist: Histo
     ang = math.pi + math.pi * min(1.0, v / vmax)
     p.line(cx, cy, cx + (r - 16) * math.cos(ang), cy + (r - 16) * math.sin(ang), w=3, color=RED, amp=0)
     p.circle(cx, cy, 5, w=2, fill=INK)
-    p.text(f"~{rate:.0f}" if a.rate_est else f"{rate:.0f}", cx, cy + 26, 24, align="center", bold=True)
-    p.text(f"gesamt gefressen: {fmt_tok(a.tok_total)}", cx, cy + 50, 14, align="center")
+    # Nadelzahl: groß und frei vom Drehpunkt, in der Nadelfarbe, wenn gerade Tokens fließen
+    num = f"~{rate:.0f}" if a.rate_est else f"{rate:.0f}"
+    p.text(num, cx - 8, cy + 42, 36, align="center", bold=True, color=RED if rate > 0.5 else INK)
+    p.text("tok/s", cx + 8 + p.text_width(num, 36, bold=True) / 2, cy + 42, 14, align="left", color=GRAY)
+    p.text(f"gesamt gefressen: {fmt_tok(a.tok_total)}", cx, cy + 62, 14, align="center")
     if a.tok_in or a.tok_out:
-        p.text(f"rein {fmt_tok(a.tok_in)} · raus {fmt_tok(a.tok_out)}", cx, cy + 68, 12, align="center", color=GRAY)
+        p.text(f"rein {fmt_tok(a.tok_in)} · raus {fmt_tok(a.tok_out)}", cx, cy + 78, 12, align="center", color=GRAY)
 
 
 # ------------------------------------------------------------------------ Kurve
