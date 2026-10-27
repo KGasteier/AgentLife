@@ -11,7 +11,7 @@ Kontextfüllung, Kompaktierung und Fehlern. Mehrere Harnessse gleichzeitig:
 
 | Weg | Befehl |
 |---|---|
-| Tastenkürzel | **SUPER + A** (nochmal drücken = schließen) |
+| Tastenkürzel | **SUPER + Z** (nochmal drücken = schließen) |
 | Terminal | `agentscope` |
 | Demo ohne Agenten | `agentscope --demo` |
 | Fenster statt Vollbild | `agentscope --windowed` (nur `q`/`Esc` schließt) |
@@ -69,13 +69,23 @@ Blitzstelle („unterbrochen“), und im Titel steht „keine Anbindung!“.
 
 Schema: [docs/STATE.md](docs/STATE.md) · Konzept: [docs/SPEC.md](docs/SPEC.md) · Stand: [STATUS.md](STATUS.md)
 
-## Installation (bereits erledigt auf diesem Rechner)
+## Installation auf einem weiteren Omarchy-Rechner
+
+```bash
+rsync -a --exclude out --exclude __pycache__ --exclude .git ~/Work/omarchy-agentscope/ ANDERER-RECHNER:~/Work/omarchy-agentscope/
+ssh ANDERER-RECHNER 'bash ~/Work/omarchy-agentscope/install.sh'
+```
+
+`install.sh` legt Launcher, pi-Erweiterung, Keybind `SUPER + Z` und Fensterregel an (mit Sicherungskopien).
+Mit `--no-hypr` bleibt die Hyprland-Konfiguration unberührt. Danach `agentscope --demo --windowed`.
+
+## Installation (manuell, so auf diesem Rechner)
 
 ```bash
 ln -sfn ~/Work/omarchy-agentscope/extension ~/.pi/agent/extensions/agentscope
 ln -sfn ~/Work/omarchy-agentscope/bin/agentscope ~/.local/bin/agentscope
 # ~/.config/hypr/bindings.lua:
-o.bind("SUPER + A", "Agentscope (xkcd)", "~/.local/bin/agentscope")
+o.bind("SUPER + Z", "Agentscope (xkcd)", "~/.local/bin/agentscope")
 # ~/.config/hypr/hyprland.lua:
 o.window("org.omarchy.agentscope", { fullscreen = true })
 ```
