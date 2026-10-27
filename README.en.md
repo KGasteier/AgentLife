@@ -54,4 +54,6 @@ Bundled: *Steel Umlaut City* (derived from *Steel City Comic*, credit to Steel C
 
 ## License
 
-No license has been chosen yet (all rights reserved by default). The bundled fonts keep their own terms.
+Code: [MIT](LICENSE). The bundled fonts keep their own terms: *Steel Umlaut City* is derived from
+*Steel City Comic* (free to use and share, credit "Steel City"; see `agentscope/fonts/README.md`),
+*Kalam* is under the SIL OFL (`agentscope/fonts/OFL.txt`).

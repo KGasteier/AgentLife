@@ -105,3 +105,9 @@ Fließtext nimmt `xkcd Script`/`Humor Sans`, falls installiert, sonst `URW Gothi
 node --test tests/                       # Erweiterungslogik
 python3 -m unittest discover -s tests    # Datenschicht + Rendering
 ```
+
+## Lizenz
+
+Code: [MIT](LICENSE). Die mitgelieferten Schriften behalten ihre eigenen Bedingungen:
+*Steel Umlaut City* ist von *Steel City Comic* abgeleitet (frei nutzbar und weitergebbar, Nennung
+„Steel City“; siehe `agentscope/fonts/README.md`), *Kalam* steht unter der SIL OFL (`agentscope/fonts/OFL.txt`).
