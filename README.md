@@ -1,4 +1,6 @@
-# agentscope – xkcd-Screensaver für Agenten (pi, Claude Code, Codex)
+# AgentLife – xkcd-Screensaver für Agenten (pi, Claude Code, Codex)
+
+[English version](README.en.md) · Projekt- und Programmname im Code: `agentscope`
 
 Ein Vollbild-Screensaver für Omarchy (Hyprland), der im Strichmännchen-Stil von xkcd zeigt,
 was **alle laufenden Agenten** gerade tun – inklusive Subagents, Tokenverbrauch,

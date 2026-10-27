@@ -24,7 +24,7 @@ pi-Prozess ──(Erweiterung extension/)──► $XDG_RUNTIME_DIR/agentscope/<
 - **Dateien statt Socket**: kein Daemon, robust bei Abstürzen (tote PIDs werden ignoriert).
 - **Python + GTK4 + Cairo**: auf Omarchy vorhanden, kein Browser, wenig Ressourcen.
 - **Eigene Strichzeichnung** (deterministisches Wackeln, langsames „Boiling“) statt Bibliothek.
-- Tastenkürzel **SUPER + A** (A = Agents; nochmal drücken schließt; SUPER+CTRL+A war belegt,
+- Tastenkürzel **SUPER + Z** (A = Agents; nochmal drücken schließt; SUPER+CTRL+A war belegt,
   SUPER+CTRL+ALT+A bleibt ChatGPT).
 - Radial-Mesh-Layout: Vollbild über `radialmesh-fullscreen`, sonst Fensterregel.
 - **Schrift Steel Umlaut City** (mitgeliefert in `agentscope/fonts/steel-umlaut-city.regular.ttf`) für
