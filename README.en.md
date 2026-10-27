@@ -20,8 +20,7 @@ context compaction ("squeezing"), retries and errors. The UI text is German; cod
 ## Install
 
 ```bash
-git clone git@github.com:KGasteier/AgentLife.git ~/Work/omarchy-agentscope
-bash ~/Work/omarchy-agentscope/install.sh          # --no-hypr leaves the Hyprland config alone
+git clone https://github.com/KGasteier/AgentLife.git ~/Work/AgentLife && bash ~/Work/AgentLife/install.sh          # --no-hypr leaves the Hyprland config alone
 agentscope --demo --windowed                        # try it without any agents
 ```
 

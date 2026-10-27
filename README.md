@@ -74,8 +74,7 @@ Schema: [docs/STATE.md](docs/STATE.md) · Konzept: [docs/SPEC.md](docs/SPEC.md) 
 ## Installation auf einem weiteren Omarchy-Rechner
 
 ```bash
-rsync -a --exclude out --exclude __pycache__ --exclude .git ~/Work/omarchy-agentscope/ ANDERER-RECHNER:~/Work/omarchy-agentscope/
-ssh ANDERER-RECHNER 'bash ~/Work/omarchy-agentscope/install.sh'
+git clone https://github.com/KGasteier/AgentLife.git ~/Work/AgentLife && bash ~/Work/AgentLife/install.sh
 ```
 
 `install.sh` legt Launcher, pi-Erweiterung, Keybind `SUPER + Z` und Fensterregel an (mit Sicherungskopien).
